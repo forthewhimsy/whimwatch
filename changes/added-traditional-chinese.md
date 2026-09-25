@@ -1,0 +1,1 @@
+- WhimWatch is available in Traditional Chinese, and chosen automatically on systems set to Chinese in Taiwan, Hong Kong or Macau.

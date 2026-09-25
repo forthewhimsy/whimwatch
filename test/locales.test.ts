@@ -63,6 +63,13 @@ describe('choosing the language', () => {
     expect(resolveLocale([])).toBe('en');
   });
 
+  it('takes Chinese by its script: Traditional is zh-TW, Simplified waits for a catalogue of its own', () => {
+    for (const tag of ['zh-TW', 'zh-Hant-TW', 'zh-HK', 'zh-MO', 'zh-Hant', 'zh_TW']) expect(resolveLocale([tag]), tag).toBe('zh-TW');
+    for (const tag of ['zh-CN', 'zh-Hans-CN', 'zh-SG', 'zh-Hans', 'zh']) expect(resolveLocale([tag]), tag).toBe('en');
+    expect(resolveLocale(['zh-CN', 'it-IT'])).toBe('it');
+    expect(resolveLocale(['not a tag', 'zh-HK'])).toBe('zh-TW');
+  });
+
   it("shows English for a language this version doesn't have, as a newer version's state file can name", () => {
     setLocale('xx' as 'it');
     expect(t().common.cancel).toBe('Cancel');
@@ -241,6 +248,35 @@ describe('Spanish', () => {
     expect(rowSummary(off, (at) => timeAgo(at, NOW))).toBe('Patreon está desactivado');
     expect(gameWarnings({ scriptModsEnabled: false }, { status: 'unknown' })[0]!.text).toContain('Los Sims 4');
     expect(t().update.summary([t().update.replaces(1, true), t().update.adds(1, false)])).toBe('Esto reemplaza 1 archivo y añade 1.');
+  });
+});
+
+describe('Traditional Chinese', () => {
+  it('says times, counts and lists the Taiwanese way, with the time before the verb', () => {
+    setLocale('zh-TW');
+    expect(timeAgo(NOW - 20_000, NOW)).toBe('剛剛');
+    expect(timeAgo(NOW - DAY, NOW)).toBe('昨天');
+    expect(timeAgo(NOW - 3 * 3600_000, NOW)).toBe('3 小時前');
+    expect(t().summary.released(timeAgo(NOW - 8 * DAY, NOW))).toBe('上週發布');
+    expect(t().home.checked(timeAgo(NOW - 20_000, NOW))).toBe('上次檢查：剛剛');
+    expect(count(12345)).toBe('12,345');
+    expect(t().common.files(1)).toBe('1 個檔案');
+    expect(list(['wicked.cc', 'LoversLab', 'Patreon'])).toBe('wicked.cc、LoversLab和Patreon');
+    // CLDR's Chinese unit list is a bare space, which runs the parts together.
+    expect(list([t().history.filesReplaced(3), t().history.filesAdded(2)], 'unit')).toBe('已替換 3 個檔案，已新增 2 個');
+    expect(t().update.leftAlone(5, [t().update.alreadyIdentical(3), t().update.notModFiles(2)])).toBe('另有 5 個未更動：3 個已完全相同，2 個不是 Mod 檔案');
+  });
+
+  it("reaches text built outside the window, with the game's own names for itself and its options", () => {
+    setLocale('zh-TW');
+    const off = { key: 'e', name: 'E', files: [], localUpdatedAt: 0, remotes: [], status: 'unknown', mutedSources: ['patreon'] } as CreatorResult;
+    expect(rowSummary(off, (at) => timeAgo(at, NOW))).toBe('Patreon 的檢查已關閉');
+    const [warning] = gameWarnings({ scriptModsEnabled: false }, { status: 'unknown' });
+    expect(warning!.text).toContain('《The Sims 4》');
+    expect(warning!.text).toContain('遊戲選項 → 其他 → 已允許腳本模組');
+    expect(t().update.summary([t().update.replaces(1, true), t().update.adds(1, false)])).toBe('此更新將替換 1 個檔案和新增 1 個。');
+    // Patreon's site is in English, so the way to its password setting is too.
+    expect(t().settings.google).toContain('Settings → Account → Login');
   });
 });
 

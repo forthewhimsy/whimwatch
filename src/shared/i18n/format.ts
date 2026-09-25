@@ -69,6 +69,8 @@ export function plural(n: number, forms: PluralForms): string {
  * separates ("2 already identical, 1 isn't a mod file"), for items that aren't a list of names.
  */
 export function list(items: readonly string[], type: 'conjunction' | 'disjunction' | 'unit' = 'conjunction'): string {
+  const separator = LOCALE_INFO[current].unitSeparator;
+  if (type === 'unit' && separator !== undefined) return items.join(separator);
   const tag = LOCALE_INFO[current].listIntl ?? intlTag();
   return cached(`list:${type}`, () => new Intl.ListFormat(tag, { style: 'long', type })).format(items);
 }

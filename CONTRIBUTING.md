@@ -125,7 +125,9 @@ change the text. `npm run locales -- it` lists the messages a language doesn't h
 **Adding a language.**
 
 1. Copy `it.ts` to `<code>.ts`, using the language's two-letter code (`de.ts`, `pt.ts`), rename `const it` to
-   `const <code>` at the top, and translate. You can leave out messages you haven't done yet.
+   `const <code>` at the top, and translate. You can leave out messages you haven't done yet. A language
+   written more than one way takes its region too, as `zh-TW.ts` (Traditional Chinese) does; its
+   constant drops the hyphen (`const zhTW`) and is listed as `'zh-TW': zhTW` in `CATALOGS`.
 2. Add the code to `LOCALE_IDS` and an entry to `LOCALE_INFO` in [`src/shared/i18n/locales.ts`](src/shared/i18n/locales.ts),
    with the language's name itself ("Deutsch"), then add the catalogue to `CATALOGS` in
    [`src/shared/i18n/index.ts`](src/shared/i18n/index.ts).

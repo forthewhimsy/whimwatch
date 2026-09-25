@@ -1,6 +1,7 @@
 import { en } from './catalogs/en.js';
 import { es } from './catalogs/es.js';
 import { it } from './catalogs/it.js';
+import { zhTW } from './catalogs/zh-TW.js';
 import { setFormatLocale } from './format.js';
 import { DEFAULT_LOCALE, isLocaleId, type LocaleId } from './locales.js';
 
@@ -31,7 +32,7 @@ type PartialMessages<T> = {
   [K in keyof T]?: T[K] extends string | readonly string[] | ((...args: never[]) => string) ? T[K] : PartialMessages<T[K]>;
 };
 
-export const CATALOGS: Record<LocaleId, Translation> = { en, es, it };
+export const CATALOGS: Record<LocaleId, Translation> = { en, es, it, 'zh-TW': zhTW };
 
 /** The English catalogue with a translation laid over it, message by message. */
 export function withFallback<T extends object>(base: T, over: PartialMessages<T> | undefined): T {
