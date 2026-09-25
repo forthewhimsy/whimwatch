@@ -3,6 +3,12 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-09-25
+
+### Added
+
+- WhimWatch is available in Traditional Chinese, and chosen automatically on systems set to Chinese in Taiwan, Hong Kong or Macau.
+
 ## [0.3.0] - 2026-09-25
 
 ### Added
