@@ -447,7 +447,7 @@ export const it = {
       tools: 'Strumenti',
       about: 'Aiuto e informazioni',
     },
-    toolsIntro: 'Metti in ordine le tue cartelle Mods. Tutto qui avviene sul tuo computer.',
+    toolsIntro: 'Funzioni in più',
     cleanUp: 'Pulizia',
     duplicateFiles: 'File duplicati',
     duplicateFilesHint: 'File di mod presenti più di una volta nelle tue cartelle Mods, identici byte per byte. Scegli tu la copia da tenere; delle altre viene fatto il backup, e la Cronologia può rimetterle a posto.',

@@ -451,7 +451,7 @@ export const en = {
       tools: 'Tools',
       about: 'Help & about',
     },
-    toolsIntro: 'Tidy your Mods folders.',
+    toolsIntro: 'Extra Bells & Whistles',
     cleanUp: 'Clean up',
     duplicateFiles: 'Duplicate files',
     duplicateFilesHint: 'Mod files that are in your Mods folders more than once. You pick the copy to keep; The others are backed up, and History can put them back.',

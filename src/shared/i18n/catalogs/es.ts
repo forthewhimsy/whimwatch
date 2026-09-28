@@ -450,7 +450,7 @@ export const es = {
       tools: 'Herramientas',
       about: 'Ayuda e información',
     },
-    toolsIntro: 'Pon en orden tus carpetas Mods. Todo lo de aquí se hace en tu ordenador.',
+    toolsIntro: 'Funciones extra',
     cleanUp: 'Limpieza',
     duplicateFiles: 'Archivos duplicados',
     duplicateFilesHint: 'Archivos de mods que están más de una vez en tus carpetas Mods, byte a byte. Tú eliges la copia que se queda; de las demás se hace una copia de seguridad, y el Historial puede devolverlas.',

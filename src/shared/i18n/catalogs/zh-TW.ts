@@ -438,7 +438,7 @@ export const zhTW = {
       tools: '工具',
       about: '說明與關於',
     },
-    toolsIntro: '整理您的 Mods 資料夾。這裡的一切都在您的電腦上執行。',
+    toolsIntro: '額外的小功能',
     cleanUp: '清理',
     duplicateFiles: '重複檔案',
     duplicateFilesHint: '在您的 Mods 資料夾中出現不只一次、內容完全相同的模組檔案。由您選擇保留哪一份；其他的會先備份，並可從歷史記錄中還原。',
