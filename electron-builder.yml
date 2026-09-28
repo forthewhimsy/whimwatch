@@ -41,12 +41,16 @@ win:
 # build/installer.nsh, which also creates the Start menu entry the template can miss.
 #
 # Not oneClick: a one-click NSIS installer has no finish page by design, so it closed in silence and
-# left no way to tell whether it had worked. The extra page is the confirmation. Everything else is
-# still decided for the user: no license page, no install-mode page, no directory page.
+# left no way to tell whether it had worked. The extra page is the confirmation. Before it, the user
+# can choose where WhimWatch goes (it defaults to %LOCALAPPDATA%\Programs\WhimWatch, as before), on
+# a first install only: once installed, a newer Setup updates it where it is without asking.
+# build/installer.nsh makes the choice safe: WhimWatch always goes in a WhimWatch folder of its own,
+# since uninstalling deletes the install folder whole, and Program Files and Windows are refused,
+# since this per-user installer can't write there. Still no license page and no install-mode page.
 nsis:
   artifactName: ${productName}-Setup-${version}.${ext}
   oneClick: false
-  allowToChangeInstallationDirectory: false
+  allowToChangeInstallationDirectory: true
   perMachine: false
   # Never made automatically; only the finish-page checkbox makes one.
   createDesktopShortcut: false

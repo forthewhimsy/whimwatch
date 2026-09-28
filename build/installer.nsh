@@ -10,6 +10,184 @@
   StrCpy $isForceCurrentInstall "1"
 !macroend
 
+; Where it's installed: the user can choose, safely.
+;
+; Uninstalling deletes the install folder and everything in it (the template's RMDir /r $INSTDIR).
+; Its own guard only adds a WhimWatch folder when the chosen path doesn't contain "WhimWatch"
+; anywhere, so choosing D:\WhimWatch stuff would install straight into it, and uninstalling would
+; take the user's files with it. Here, WhimWatch always goes in a folder named WhimWatch inside the
+; one chosen, unless the chosen one is itself called WhimWatch; and a WhimWatch folder that already
+; holds other files can't be used unless it's a WhimWatch install (its program and its uninstaller
+; both there). Program Files and the Windows folder can't either: this installer installs for the
+; current user only, without administrator rights, and couldn't write there. In the window, the
+; button stays greyed out for a folder that can't be used; a silent install (/S /D=…) gets the same
+; rules and stops with error code 2.
+;
+; Once WhimWatch is installed, the folder page isn't shown: running a newer Setup updates it where it
+; is (WhimWatch doesn't use electron-updater, so its --updated, which would skip the page, is never
+; passed). Moving an install means uninstalling and installing again.
+!ifndef BUILD_UNINSTALLER
+  Var wwDir
+  Var wwUsable
+  Var wwPart
+  Var wwFind
+  Var wwName
+  Var wwDirText
+  Var wwDirSeen
+
+  ; The folder page's own text, read by MUI_PAGE_DIRECTORY, so defined before electron-builder adds
+  ; the page. A variable, set in .onInit for the installer's language (wwSetText). Nothing else can be
+  ; attached to that page from here: the template adds the install-mode page first, and that page
+  ; takes any MUI_PAGE_CUSTOMFUNCTION_* defined beforehand, so the page is handled in .onVerifyInstDir.
+  !define MUI_DIRECTORYPAGE_TEXT_TOP "$wwDirText"
+!endif
+
+; The functions come in with the header, once LogicLib, FileFunc, the languages and electron-builder's
+; defines are there: this file itself is read before them.
+!macro customHeader
+  !ifndef BUILD_UNINSTALLER
+    !include FileFunc.nsh
+
+    ; The folder page's text, in the languages WhimWatch itself speaks and English for the rest of
+    ; the installer's many: a LangString would have to be written for every one of them. Short, and
+    ; about any folder: MUI's text above the folder box fits about three lines.
+    Function wwSetText
+      StrCpy $wwDirText "WhimWatch goes in a WhimWatch folder inside the one you choose. Program Files, Windows and folders already in use can't be used."
+      !ifdef LANG_SPANISH
+        ${If} $LANGUAGE == ${LANG_SPANISH}
+          StrCpy $wwDirText "WhimWatch se instala en una carpeta WhimWatch dentro de la que elijas. No se pueden usar Archivos de programa, Windows ni carpetas que ya estén en uso."
+        ${EndIf}
+      !endif
+      !ifdef LANG_ITALIAN
+        ${If} $LANGUAGE == ${LANG_ITALIAN}
+          StrCpy $wwDirText "WhimWatch va in una cartella WhimWatch dentro quella che scegli. Non si possono usare Programmi, Windows né cartelle già in uso."
+        ${EndIf}
+      !endif
+      !ifdef LANG_TRADCHINESE
+        ${If} $LANGUAGE == ${LANG_TRADCHINESE}
+          StrCpy $wwDirText "WhimWatch 會安裝在您所選資料夾內的 WhimWatch 資料夾中。無法使用 Program Files、Windows 或已在使用中的資料夾。"
+        ${EndIf}
+      !endif
+    FunctionEnd
+
+    ; $wwDir: the folder chosen, made into the folder WhimWatch goes in.
+    Function wwFinalDir
+      StrCpy $wwPart $wwDir 1 -1
+      ${If} $wwPart == "\"
+        StrCpy $wwDir $wwDir -1
+      ${EndIf}
+      ${GetFileName} $wwDir $wwPart
+      ; LogicLib's == ignores case: whimwatch is WhimWatch.
+      ${If} $wwPart != "${APP_FILENAME}"
+        StrCpy $wwDir "$wwDir\${APP_FILENAME}"
+      ${EndIf}
+    FunctionEnd
+
+    ; $wwUsable: 1 if WhimWatch can go in $wwDir (a final folder), 0 if not.
+    Function wwCheckDir
+      StrCpy $wwUsable 1
+      !insertmacro wwUnder "$PROGRAMFILES"
+      !insertmacro wwUnder "$PROGRAMFILES64"
+      !insertmacro wwUnder "$WINDIR"
+      ${If} $wwUsable == 1
+      ${AndIf} ${FileExists} "$wwDir\*.*"
+        ; A WhimWatch install is one this installer made: its program and its uninstaller. A folder
+        ; with only a WhimWatch.exe in it (a renamed portable build beside someone's own files) isn't.
+        ${IfNot} ${FileExists} "$wwDir\${APP_EXECUTABLE_FILENAME}"
+        ${OrIfNot} ${FileExists} "$wwDir\${UNINSTALL_FILENAME}"
+          ; Anything else already there can be used only while it's empty.
+          FindFirst $wwFind $wwName "$wwDir\*.*"
+          ${DoWhile} $wwName != ""
+            ${If} $wwName != "."
+            ${AndIf} $wwName != ".."
+              StrCpy $wwUsable 0
+              ${ExitDo}
+            ${EndIf}
+            FindNext $wwFind $wwName
+          ${Loop}
+          FindClose $wwFind
+        ${EndIf}
+      ${EndIf}
+    FunctionEnd
+
+    ; The folder page, the only callback that's its own alone: NSIS calls it as the page opens and
+    ; whenever the folder changes.
+    ; - Already installed: the page is moved past, once, so a newer Setup updates WhimWatch where it
+    ;   is. The message is posted, not sent: the page is still being built when this first runs.
+    ; - Otherwise the button reads Install (the page after this one, wwSettleDir, is never shown, but
+    ;   it makes NSIS label this one Next), and it's greyed out while the folder can't be used.
+    ; - Back is greyed out: the only page before this one is the install-mode page, which skips
+    ;   itself (customInstallMode), and Back onto a page that skips with nothing before it closes
+    ;   Setup, silently and with exit code 0.
+    Function .onVerifyInstDir
+      ${If} $wwDirSeen != 1
+        StrCpy $wwDirSeen 1
+        ${If} $perUserInstallationFolder != ""
+          System::Call "user32::PostMessage(p $HWNDPARENT, i 0x408, p 1, p 0)"
+        ${EndIf}
+      ${EndIf}
+      GetDlgItem $wwPart $HWNDPARENT 3
+      EnableWindow $wwPart 0
+      GetDlgItem $wwPart $HWNDPARENT 1
+      SendMessage $wwPart ${WM_SETTEXT} 0 "STR:$(^InstallBtn)"
+      StrCpy $wwDir $INSTDIR
+      Call wwFinalDir
+      Call wwCheckDir
+      ${If} $wwUsable != 1
+        Abort
+      ${EndIf}
+    FunctionEnd
+  !endif
+!macroend
+
+; $wwDir under BASE (the folder itself or anything in it): $wwUsable becomes 0.
+!macro wwUnder BASE
+  ${If} "${BASE}" != ""
+    StrLen $wwPart "${BASE}"
+    StrCpy $wwName $wwDir $wwPart
+    ${If} $wwName == "${BASE}"
+      StrCpy $wwName $wwDir 1 $wwPart
+      ${If} $wwName == "\"
+      ${OrIf} $wwName == ""
+        StrCpy $wwUsable 0
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; Before any page, and for a silent install the only chance: the default, or /D=…. Not for an
+; install being updated in its own folder, which stays where it is.
+!macro customInit
+  Call wwSetText
+  ${IfNot} ${isUpdated}
+  ${AndIf} $INSTDIR != $perUserInstallationFolder
+    StrCpy $wwDir $INSTDIR
+    Call wwFinalDir
+    StrCpy $INSTDIR $wwDir
+    ${If} ${Silent}
+      Call wwCheckDir
+      ${If} $wwUsable != 1
+        SetErrorLevel 2
+        Quit
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; After the folder page: the folder chosen becomes the WhimWatch folder inside it. No page is shown.
+!macro customPageAfterChangeDir
+  Page custom wwSettleDir
+  Function wwSettleDir
+    ${IfNot} ${isUpdated}
+    ${AndIf} $INSTDIR != $perUserInstallationFolder
+      StrCpy $wwDir $INSTDIR
+      Call wwFinalDir
+      StrCpy $INSTDIR $wwDir
+    ${EndIf}
+    Abort
+  FunctionEnd
+!macroend
+
 ; The Start menu entry, which electron-builder's own template can quietly fail to create.
 ;
 ; Its addStartMenuLink only calls CreateShortCut while $keepShortcuts is "false". The first install

@@ -147,7 +147,7 @@ Download the file for your system from the latest release on the [Releases](../.
 
 | System | File |
 |---|---|
-| Windows 10 and 11 | **`WhimWatch-Setup-x.y.z.exe`**: installs for your user account without administrator rights, then offers to open WhimWatch and to add a desktop shortcut. Or `WhimWatch-x.y.z-portable.exe` to run it without installing. If you run the portable EXE and it looks like it does nothing at all — no window, no error, no nothing — see [below](#the-portable-build-does-nothing). |
+| Windows 10 and 11 | **`WhimWatch-Setup-x.y.z.exe`**: installs for your user account without administrator rights, in a folder you can choose, then offers to open WhimWatch and to add a desktop shortcut. Or `WhimWatch-x.y.z-portable.exe` to run it without installing. If you run the portable EXE and it looks like it does nothing at all — no window, no error, no nothing — see [below](#the-portable-build-does-nothing). |
 | macOS on Apple silicon (M1 and later) | **`WhimWatch-x.y.z-arm64.dmg`**: open it and drag WhimWatch to Applications. |
 | macOS on Intel | `WhimWatch-x.y.z-x64.dmg` |
 | Ubuntu, Debian, Linux Mint | **`WhimWatch-x.y.z-amd64.deb`**: open it with your software app, or `sudo apt install ./WhimWatch-x.y.z-amd64.deb`. |
