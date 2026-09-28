@@ -1,13 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
-import { basename, dirname, join, sep } from 'node:path';
+import { basename, join, sep } from 'node:path';
 import type { DuplicateGroup } from '../shared/api.js';
 import { translatedError } from '../shared/i18n/index.js';
 import type { InstallOperation, InstallRecord, LocalFile } from '../shared/types.js';
 import { CancelledError, throwIfCancelled } from './fetcher.js';
 import { sameContent, sha256 } from './hash.js';
-import { assertInside, backupPath, move, revert, scriptDir } from './installer.js';
+import { assertInside, backupPath, move, revert } from './installer.js';
 import { isGameRunning as defaultIsGameRunning } from './process.js';
 
 export interface FindOptions {
@@ -101,8 +101,10 @@ const COPY_MARKER = /(?:\s\(\d+\)|\s-\s(?:copy|kopie|copia)(?:\s\(\d+\))?|[_\s-]
  * files always give the same answer.
  */
 export function suggestKeep(copies: readonly { path: string; root: string; relPath: string; mtimeMs: number }[], installed: ReadonlySet<string>): string {
-  const loads = (c: (typeof copies)[number]): boolean => !/\.ts4script$/i.test(c.path) || scriptDir(dirname(c.path), [c.root]) === dirname(c.path);
   const depth = (c: (typeof copies)[number]): number => c.relPath.split(/[\\/]/).length;
+  // A script loads at most one folder into Mods (the rule scriptDir keeps for installs): told from
+  // its path inside its Mods folder, which is the same whichever way the Mods folder is written.
+  const loads = (c: (typeof copies)[number]): boolean => !/\.ts4script$/i.test(c.path) || depth(c) <= 2;
   const rank = (c: (typeof copies)[number]): number[] => [loads(c) ? 0 : 1, installed.has(c.path) ? 0 : 1, COPY_MARKER.test(basename(c.path)) ? 1 : 0, depth(c), c.mtimeMs];
   const sorted = [...copies].sort((a, b) => {
     const ra = rank(a);

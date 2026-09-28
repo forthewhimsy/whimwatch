@@ -105,6 +105,12 @@ describe('the copy to keep', () => {
 
   it('keeps a script that loads over one filed too deep to', () => {
     expect(suggestKeep([copy('a/b/Thornwood.ts4script'), copy('a/Thornwood.ts4script', 9)], new Set([join('/m', 'a/b/Thornwood.ts4script')]))).toBe(join('/m', 'a/Thornwood.ts4script'));
+    // Told from where it is inside its Mods folder, however that folder is written: a root that
+    // doesn't match the paths' form (as on Windows, where a path's slashes turn) changes nothing.
+    const elsewhere = (relPath: string, mtimeMs = 0) => ({ ...copy(relPath, mtimeMs), root: 'M:\\Mods' });
+    expect(suggestKeep([elsewhere('a/b/Thornwood.ts4script'), elsewhere('a/Thornwood.ts4script', 9)], new Set([join('/m', 'a/b/Thornwood.ts4script')]))).toBe(
+      join('/m', 'a/Thornwood.ts4script'),
+    );
   });
 });
 
