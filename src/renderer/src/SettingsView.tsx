@@ -18,6 +18,7 @@ import {
   Trash2,
   User,
   UserSearch,
+  Wrench,
   X,
 } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useEffect, useState } from 'react';
@@ -28,6 +29,7 @@ import { openIssueForm, type ReportForm } from './Feedback';
 import { type PrivacyLevel, privacyLevel, privacyLevelPatch } from '../../shared/privacy';
 import { type AppSettings, UPDATE_SITES } from '../../shared/types';
 import { Dialog, useConfirm } from './dialog';
+import { DuplicatesDialog } from './DuplicatesDialog';
 import { acceleratorFromKey, acceleratorKeys, formatBytes, SOURCE_LABEL, timeAgo } from './format';
 import { useToast } from './toast';
 import { api, type AppModel } from './useApp';
@@ -35,7 +37,7 @@ import { rich } from './rich';
 import { useSiteToggle } from './useSiteToggle';
 import { Banner, Button, IconButton, Kbd, Segmented, SettingRow, ToggleRow } from './ui';
 
-export type SettingsSection = 'general' | 'privacy' | 'accounts' | 'updates' | 'storage' | 'about';
+export type SettingsSection = 'general' | 'privacy' | 'accounts' | 'updates' | 'storage' | 'tools' | 'about';
 
 const SECTIONS: { id: SettingsSection; icon: typeof Info }[] = [
   { id: 'general', icon: SlidersHorizontal },
@@ -43,6 +45,7 @@ const SECTIONS: { id: SettingsSection; icon: typeof Info }[] = [
   { id: 'accounts', icon: User },
   { id: 'updates', icon: Download },
   { id: 'storage', icon: Database },
+  { id: 'tools', icon: Wrench },
   { id: 'about', icon: Info },
 ];
 
@@ -112,6 +115,7 @@ export function SettingsView({
         {section === 'accounts' && <Accounts snapshot={snapshot} app={app} onPrivacy={() => onSection('privacy')} />}
         {section === 'updates' && <Updates snapshot={snapshot} app={app} set={set} />}
         {section === 'storage' && <Storage snapshot={snapshot} app={app} />}
+        {section === 'tools' && <Tools app={app} />}
         {section === 'about' && <About app={app} onReport={onReport} />}
       </main>
     </div>
@@ -527,6 +531,28 @@ function Storage({ snapshot, app }: { snapshot: AppSnapshot; app: AppModel }) {
           </Button>
         </SettingRow>
       </Group>
+    </>
+  );
+}
+
+/** Housekeeping for the Mods folders, run here and only when asked. */
+function Tools({ app }: { app: AppModel }) {
+  const [duplicates, setDuplicates] = useState(false);
+  const m = t().settings;
+  // Reading an online-only OneDrive file downloads it: said before the search, not after. The same
+  // test as the diagnostics' "OneDrive-redirected" (main/modsdir.ts).
+  const oneDrive = app.snapshot?.dirs.some((d) => /onedrive/i.test(d));
+  return (
+    <>
+      <PageHead title={m.section.tools} text={m.toolsIntro} />
+      <Group label={m.cleanUp}>
+        <SettingRow title={m.duplicateFiles} hint={oneDrive ? `${m.duplicateFilesHint} ${m.duplicatesOneDrive}` : m.duplicateFilesHint}>
+          <Button size="sm" onClick={() => setDuplicates(true)} disabled={!app.snapshot?.dirs.length}>
+            {m.findDuplicates}
+          </Button>
+        </SettingRow>
+      </Group>
+      {duplicates && <DuplicatesDialog app={app} onClose={() => setDuplicates(false)} />}
     </>
   );
 }

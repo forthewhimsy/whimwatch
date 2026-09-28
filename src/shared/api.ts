@@ -181,6 +181,26 @@ export interface UpdatePlan {
   startUnticked?: string[];
 }
 
+/** One file found more than once in the Mods folders, byte for byte. */
+export interface DuplicateGroup {
+  /** The files' SHA-256: what the window names a group by when asking to remove from it. */
+  id: string;
+  name: string;
+  size: number;
+  copies: { path: string; root: string; relPath: string; mtimeMs: number }[];
+  /** The copy suggested for keeping (see suggestKeep). */
+  keep: string;
+}
+
+export interface DuplicateRemoval {
+  snapshot: AppSnapshot;
+  /** The History record, for Undo; absent when nothing was removed. */
+  recordId?: string;
+  removed: number;
+  /** Copies left where they were because they'd changed since they were found. */
+  skipped: number;
+}
+
 /** What the user picked in the update preview. */
 export interface UpdateChoice {
   /** Installed files (from possiblyObsolete) to remove. */
@@ -207,6 +227,8 @@ export type AppEvent =
   /** The user passed the site's human check, so it can be checked again. */
   | { type: 'verification-passed'; site: BrowserSite }
   | { type: 'update-progress'; progress: UpdateProgress }
+  /** Bytes read so far while looking for duplicate files, of the bytes that have to be read. */
+  | { type: 'duplicates-progress'; done: number; total: number }
   | { type: 'batch'; batch: BatchState }
   | { type: 'error'; message: string }
   /** Updates were installed automatically after a check. */
@@ -260,6 +282,14 @@ export interface WhimWatchApi {
   setFileIgnored(key: string, name: string, ignored: boolean): Promise<AppSnapshot>;
   /** What an archive on one of the creator's pages is (NewFileInfo.kind), or null to be asked again. */
   setFileKind(key: string, name: string, kind: FileKind | null): Promise<AppSnapshot>;
+  /** Walks the Mods folders for files that are byte for byte the same; progress comes as 'duplicates-progress' events. */
+  findDuplicates(): Promise<DuplicateGroup[]>;
+  cancelDuplicates(): Promise<void>;
+  /**
+   * Removes (backs up) duplicates from the last findDuplicates: in each named group, every copy but
+   * `keep`. Groups are named, never paths, so nothing outside what was found can be touched.
+   */
+  removeDuplicates(choices: { group: string; keep: string }[]): Promise<DuplicateRemoval>;
   openExternal(url: string): Promise<void>;
   /** Native context menu for a link: open, open privately, copy. */
   showLinkMenu(url: string): Promise<void>;
@@ -336,6 +366,9 @@ export const API_METHODS = [
   'setCreatorSite',
   'setFileIgnored',
   'setFileKind',
+  'findDuplicates',
+  'cancelDuplicates',
+  'removeDuplicates',
   'openExternal',
   'showLinkMenu',
   'openBackupFolder',

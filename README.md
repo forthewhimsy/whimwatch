@@ -78,6 +78,8 @@ Stay Wicked.
     after early access), it says **Already up to date** instead of reinstalling.
   - Checks and downloads can be cancelled at any time. The final install step (moving files) always
     finishes.
+- **Tidies your Mods folders** with tools that run only when you ask, such as finding duplicate
+  files. See [Extras and tools](#extras-and-tools).
 - **Answers "will WickedWhims work when I start The Sims?"** It shows your game version next to the newest one
   WickedWhims supports, and warns when mods or script mods are switched off in the game's options.
 - **Stays discreet:** a privacy screen that blurs WhimWatch when it isn't the active window (and keeps
@@ -99,6 +101,19 @@ WhimWatch doesn't need an account to check for updates, and it never uploads any
   <br>
   <em>Settings → Privacy &amp; discretion</em>
 </p>
+
+## Extras and Tools
+
+### Duplicate files
+
+Finds mod files (`.package` and `.ts4script`) that are in your Mods folders more than once and helps you clean up duplicate files.
+
+- **Only exact copies count.** Two files with the same name but different contents aren't duplicates,
+  and a hard link or a linked folder pointing at a file isn't a second copy of it.
+- **You pick the copy to keep** for each file found more than once, or leave that file alone.
+  WhimWatch suggests one.
+- **The other copies are backed up, not deleted,** and **History** can put them back. They stay in
+  the backups folder until backups expire (30 days by default, Settings → Updates & backups).
 
 ## How it decides something is out of date
 
@@ -182,6 +197,9 @@ too.
 - **Old packages:** a downloaded file replaces the installed file with the **same name**. Installed
   files from that creator that aren't in the download are listed but kept, unless you tick them for
   removal. *Update all* never removes anything.
+- **Duplicate files** are only looked for when you ask, and only removed after you've picked which
+  copy stays. Removed copies go to a backup folder like replaced files. See
+  [Extras and tools](#extras-and-tools).
 - **Backups** are deleted after 30 days by default (Settings → Updates & backups: 7, 30 or 90 days, or
   never). Settings → Storage & data shows how much space they use and can delete them all. Once a
   backup is gone, that update can't be undone.

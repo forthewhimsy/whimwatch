@@ -107,6 +107,7 @@ if (process.argv.includes('--smoke')) {
     const updater = new Updater(controller, join(app.getPath('temp'), 'whimwatch'));
     controller.afterCheck = (result) => updater.autoInstall(result);
     controller.updatesBusy = () => updater.isBusy();
+    controller.exclusive = (fn) => updater.runExclusive(fn);
     // Housekeeping before anything else can start an update.
     await updater.clearLeftoverDownloads().catch(() => undefined);
     await controller.pruneBackups().catch((err: Error) => console.warn('Backup cleanup failed:', englishMessage(err)));

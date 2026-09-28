@@ -302,6 +302,11 @@ export interface InstallRecord {
    * gave each, or undefined where no list named it (see CreatorLinkPrefs.uploadedAt).
    */
   uploadedAt?: Record<string, number | null>;
+  /**
+   * Duplicate files removed with Settings → Tools, not an install: no creator, and only removals.
+   * Undo puts them back like any other.
+   */
+  cleanup?: true;
   undoneAt?: number;
   /** The backup was deleted (expired or cleared), so the update can't be undone. */
   backupDeletedAt?: number;

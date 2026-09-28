@@ -26,6 +26,7 @@ import { removeLink, restoreLink, unreadLinks } from '../core/link-prefs.js';
 import { dropInstalledFiles, fileKindKey, updateSkipped } from '../core/pack-files.js';
 import { BUNDLED_OVERRIDES, loadOverrides, type Overrides } from '../core/overrides.js';
 import { filesFromCache, rescanPaths, type ScanCache, scanDirs } from '../core/scanner.js';
+import { applyCleanup, findDuplicates, suggestKeep } from '../core/duplicates.js';
 import { classifyUrl, linkKey, linkProblem, normalizeUserUrl } from '../core/sources/urls.js';
 import { APP_ID, REPO_SLUG } from '../shared/config.js';
 import { type AppState, loadScanCache, loadState, SaveQueue, saveState, writeJsonAtomic } from '../core/store.js';
@@ -35,6 +36,8 @@ import {
   type AppSnapshot,
   type BatchState,
   type BrowserSite,
+  type DuplicateGroup,
+  type DuplicateRemoval,
   EVENT_CHANNEL,
   type FolderPreview,
   type OtherFile,
@@ -79,6 +82,8 @@ export class AppController {
   afterCheck?: (result: CheckResult) => Promise<void>;
   /** Whether an update is downloading or installing (backups must not be touched then). */
   updatesBusy: () => boolean = () => false;
+  /** Runs a change to the Mods folders while no update can start (set to the updater's lock). */
+  exclusive: <T>(fn: () => Promise<T>) => Promise<T> = (fn) => fn();
   private state!: AppState;
   private running = false;
   private progress?: CheckProgress;
@@ -553,6 +558,75 @@ export class AppController {
     const core = coreResult(files, undefined, result.core.error, this.state.dismissed[CORE_KEY]);
     Object.assign(result.core, { installed: core.installed, installedFiles: core.installedFiles });
     this.refreshStatuses();
+  }
+
+  /**
+   * Looks for mod files that are byte for byte the same, anywhere in the Mods folders, with the copy
+   * to keep suggested for each. Remembered, so removeDuplicates only ever acts on what was found.
+   * Not during a check or an update: both are changing the same files.
+   */
+  async findDuplicates(): Promise<DuplicateGroup[]> {
+    if (this.running) throw translatedError((m) => m.main.waitForCheck);
+    if (this.updatesBusy()) throw translatedError((m) => m.main.waitForUpdate);
+    this.dupeSearch?.abort();
+    const abort = (this.dupeSearch = new AbortController());
+    try {
+      const files = await this.localFilesNow();
+      // Copies WhimWatch put in place, which its updates know where to find.
+      const installed = new Set(
+        this.state.installs.filter((r) => !r.undoneAt).flatMap((r) => r.operations.filter((o) => o.kind !== 'remove').map((o) => o.target)),
+      );
+      const found = await findDuplicates(files, {
+        signal: abort.signal,
+        roots: this.state.dirs,
+        onProgress: (done, total) => this.emit({ type: 'duplicates-progress', done, total }),
+      });
+      this.dupes = found.map((g) => ({ ...g, keep: suggestKeep(g.copies, installed) }));
+      return this.dupes;
+    } finally {
+      if (this.dupeSearch === abort) this.dupeSearch = undefined;
+    }
+  }
+
+  cancelDuplicates(): void {
+    this.dupeSearch?.abort();
+  }
+
+  async removeDuplicates(choices: unknown): Promise<DuplicateRemoval> {
+    if (this.running) throw translatedError((m) => m.main.waitForCheck);
+    if (this.updatesBusy()) throw translatedError((m) => m.main.waitForUpdate);
+    if (!Array.isArray(choices) || choices.length > 10_000) throw new Error('Invalid duplicate choices');
+    const groups = choices.map((c: unknown) => {
+      const { group, keep } = (c ?? {}) as { group?: unknown; keep?: unknown };
+      const found = this.dupes.find((g) => g.id === group);
+      // Only a group this window was shown, and one of its own copies to keep.
+      if (!found || typeof keep !== 'string' || !found.copies.some((x) => x.path === keep)) throw new Error('Unknown duplicate group');
+      return { keep, remove: found.copies.map((x) => x.path).filter((p) => p !== keep) };
+    });
+    // Behind the updater's lock: an automatic install after a scheduled check can't start mid-way.
+    return this.exclusive(async () => {
+      const { record, skipped } = await applyCleanup({ groups, backupRoot: this.backupRoot, modsRoots: this.state.dirs });
+      // Acted on: a second click can't act on them again.
+      this.dupes = this.dupes.filter((g) => !choices.some((c: { group?: unknown }) => c.group === g.id));
+      const snapshot = record ? await this.recordInstall(record) : await this.commit();
+      return { snapshot, recordId: record?.id, removed: record?.operations.length ?? 0, skipped };
+    });
+  }
+
+  private dupes: DuplicateGroup[] = [];
+  private dupeSearch?: AbortController;
+
+  /** Every mod file in the Mods folders as they are now, from a walk that only reads what changed. */
+  private async localFilesNow(): Promise<LocalFile[]> {
+    if (this.state.lastResult) {
+      await this.rescanLocal('all');
+      this.lastWalk = Date.now();
+      return filesFromCache(this.scanCache) ?? [];
+    }
+    const scan = await scanDirs(this.state.dirs, { cache: this.scanCache });
+    this.scanCache = scan.cache;
+    await this.saveScanCache();
+    return scan.files;
   }
 
   /**

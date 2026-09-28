@@ -1,12 +1,13 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { createReadStream, existsSync } from 'node:fs';
-import { copyFile, mkdir, rename, rm, stat, unlink, utimes } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { copyFile, mkdir, rename, rm, unlink, utimes } from 'node:fs/promises';
 import { basename, dirname, join, relative, sep } from 'node:path';
 import type { PlannedFile, UpdatePlan } from '../shared/api.js';
 import type { InstallOperation, InstallRecord, LocalFile } from '../shared/types.js';
 import { t, translatedError } from '../shared/i18n/index.js';
 import { MOD_FILE } from './archive.js';
 import { throwIfCancelled } from './fetcher.js';
+import { sameContent } from './hash.js';
 import { sameFile } from './pack-files.js';
 import { isGameRunning as defaultIsGameRunning } from './process.js';
 
@@ -108,27 +109,6 @@ export async function markUnchanged(plan: UpdatePlan, signal?: AbortSignal): Pro
   plan.onlyAdds = !plan.upToDate && plan.files.some((f) => f.unchanged) && plan.files.every((f) => f.unchanged || f.kind === 'add');
 }
 
-async function sameContent(a: string, b: string): Promise<boolean> {
-  try {
-    const [sa, sb] = await Promise.all([stat(a), stat(b)]);
-    if (sa.size !== sb.size) return false;
-    const [ha, hb] = await Promise.all([sha256(a), sha256(b)]);
-    return ha === hb;
-  } catch {
-    return false;
-  }
-}
-
-function sha256(path: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = createHash('sha256');
-    createReadStream(path)
-      .on('data', (chunk) => hash.update(chunk))
-      .on('error', reject)
-      .on('end', () => resolve(hash.digest('hex')));
-  });
-}
-
 function defaultTargetDir(installed: LocalFile[], roots: string[]): string {
   const newest = [...installed].sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
   if (newest) return dirname(newest.path);
@@ -226,7 +206,7 @@ export async function undoInstall(
   if (record.undoneAt) return record;
   if (record.backupDeletedAt) throw translatedError((m) => m.installer.backupDeleted);
   if (await (opts.isGameRunning ?? defaultIsGameRunning)()) {
-    throw translatedError((m) => m.installer.closeGameUndo);
+    throw translatedError((m) => (record.cleanup ? m.installer.closeGameUndoCleanup : m.installer.closeGameUndo));
   }
   for (const op of record.operations) {
     if (op.backup && !existsSync(op.backup)) throw translatedError((m) => m.installer.backupMissing(basename(op.target)));
@@ -236,23 +216,23 @@ export async function undoInstall(
   return { ...record, undoneAt: (opts.now ?? Date.now)() };
 }
 
-async function revert(ops: InstallOperation[]): Promise<void> {
+export async function revert(ops: InstallOperation[]): Promise<void> {
   for (const op of [...ops].reverse()) {
     if (op.kind !== 'remove') await rm(op.target, { force: true });
     if (op.backup) await move(op.backup, op.target);
   }
 }
 
-function backupPath(backupDir: string, target: string, roots: string[]): string {
+export function backupPath(backupDir: string, target: string, roots: string[]): string {
   const index = roots.findIndex((r) => rootOf(target, [r]));
   return index >= 0 ? join(backupDir, String(index), relative(roots[index]!, target)) : join(backupDir, 'other', basename(target));
 }
 
-function assertInside(path: string, roots: string[]): void {
+export function assertInside(path: string, roots: string[]): void {
   if (!rootOf(path, roots)) throw new Error(`Refusing to touch a file outside your Mods folders: ${path}`);
 }
 
-async function move(from: string, to: string): Promise<void> {
+export async function move(from: string, to: string): Promise<void> {
   await mkdir(dirname(to), { recursive: true });
   try {
     await rename(from, to);

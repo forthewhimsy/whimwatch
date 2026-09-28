@@ -505,6 +505,11 @@ export class Updater {
       this.controller.emit({ type: 'update-progress', progress: { creatorKey, stage, message, received, total } });
   }
 
+  /** Runs `fn` while no update can start: for other changes to the Mods folders (removing duplicates). */
+  runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    return this.exclusive(fn);
+  }
+
   private async exclusive<T>(fn: () => Promise<T>): Promise<T> {
     if (this.busy) throw translatedError((m) => m.updater.anotherUpdate);
     this.busy = true;

@@ -1673,6 +1673,35 @@ button.chip {
   padding: var(--s3) 0 0;
 }
 
+/* Duplicate files: one bordered list per file found more than once. */
+.dupe-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  padding: 10px var(--s4) 4px;
+}
+
+.dupe-head .file-line-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.dupe-leave {
+  border-top: 1px solid var(--line);
+}
+
+.dupe-group.off .dupe-head .file-line-name {
+  color: var(--text-3);
+}
+
+.radio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 /* The list's own border is the top line. */
 .file-changes > :first-child {
   border-top: 0;

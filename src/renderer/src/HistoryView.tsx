@@ -1,4 +1,4 @@
-import { ArrowLeft, Database, Download, EyeOff, FolderOpen, RotateCcw } from 'lucide-react';
+import { ArrowLeft, CopyMinus, Database, Download, EyeOff, FolderOpen, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { StorageInfo } from '../../shared/api';
 import { list, t } from '../../shared/i18n';
@@ -151,7 +151,15 @@ function HistoryEntry({ item, app }: { item: HistoryItem; app: AppModel }) {
   // A pack they went and got, rather than an update to something they had.
   const newPack = isNewPackInstall(item);
   const site = first.source && SOURCE_LABEL[first.source];
-  const title = item.kind === 'batch' ? m.updatedPacks(records.length) : newPack ? m.added(first.name, site) : m.updated(first.name, site);
+  // Duplicate files removed from Settings → Tools: no creator, and only removals.
+  const cleanup = first.cleanup === true;
+  const title = cleanup
+    ? m.removedDuplicates(counts.removed)
+    : item.kind === 'batch'
+      ? m.updatedPacks(records.length)
+      : newPack
+        ? m.added(first.name, site)
+        : m.updated(first.name, site);
 
   let detail: string;
   if (undone) {
@@ -159,6 +167,7 @@ function HistoryEntry({ item, app }: { item: HistoryItem; app: AppModel }) {
     const what = undoRestoresFiles(records) ? m.oldFilesBack : m.addedFilesRemoved;
     detail = `${m.undoneOn(formatShortDate(Math.max(...records.map((r) => r.undoneAt ?? 0))))} · ${what}`;
   } else if (!live.length) detail = `${m.backupGone(records.length)} · ${formatShortDate(item.at)}`;
+  else if (cleanup) detail = `${m.duplicateCleanup} · ${formatTime(item.at)}`;
   else detail = `${automatic ? m.afterCheck : item.kind === 'batch' ? m.updateAll : newPack ? m.newPack : m.update} · ${files} · ${formatTime(item.at)}`;
 
   const undo = async (): Promise<void> => {
@@ -172,14 +181,14 @@ function HistoryEntry({ item, app }: { item: HistoryItem; app: AppModel }) {
       if (!ok) return;
       if (await app.run(() => api.undoBatch(item.id))) toast({ text: m.undid(live.length) });
     } else if (await app.run(() => api.undoInstall(first.id))) {
-      toast({ text: newPack ? m.removedPack(first.name) : m.undidUpdate(first.name) });
+      toast({ text: cleanup ? m.restoredDuplicates(counts.removed) : newPack ? m.removedPack(first.name) : m.undidUpdate(first.name) });
     }
   };
 
   return (
     <li className={`history-item ${undone ? 'undone' : ''} ${!live.length && !undone ? 'expired' : ''}`}>
       <span className="history-icon">
-        {undone ? <RotateCcw size={18} aria-hidden="true" /> : <Download size={18} aria-hidden="true" />}
+        {undone ? <RotateCcw size={18} aria-hidden="true" /> : cleanup ? <CopyMinus size={18} aria-hidden="true" /> : <Download size={18} aria-hidden="true" />}
       </span>
       <div className="history-text">
         <span className="history-title">
