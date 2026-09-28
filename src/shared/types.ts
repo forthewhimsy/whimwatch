@@ -112,6 +112,12 @@ export interface RemoteInfo {
   /** Patreon: newest release-like post is not viewable with the current session. */
   locked?: boolean;
   /**
+   * Patreon: `locked` was seen while signed out, when every patrons-only post is locked. Not yet
+   * known to be "not a patron": signing in may unlock it, so it's offered as Sign in, and read again
+   * once signed in (AppController.recheckPatreonLocks).
+   */
+  lockedSignedOut?: true;
+  /**
    * Whether the user's files show this pack (see core/ownership.ts). Absent
    * means it couldn't be told, which counts as theirs: a page classified `no`
    * is a pack they don't have, never an update.

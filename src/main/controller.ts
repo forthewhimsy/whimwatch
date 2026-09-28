@@ -135,6 +135,9 @@ export class AppController {
     controller.weakCookieStorage = weakCookieStorage();
     controller.applyLanguage();
     await controller.refreshAccounts();
+    // No re-read of Patreon locks here: opening WhimWatch contacts no site unless "Check when
+    // WhimWatch opens" is on, and that check reads those pages signed in anyway. A lock still left
+    // from signing out is offered as "Check again" instead (recheckPatreon).
     return controller;
   }
 
@@ -289,6 +292,7 @@ export class AppController {
       ),
       rejectedLinks: Object.fromEntries(Object.entries(s.linkPrefs).map(([k, v]) => [k, v.rejected])),
       creatorMutedSources: Object.fromEntries(Object.entries(s.linkPrefs).flatMap(([k, v]) => (v.mutedSources?.length ? [[k, v.mutedSources]] : []))),
+      rechecking: [...this.rechecking],
       ignoredFiles: Object.fromEntries(Object.entries(s.linkPrefs).flatMap(([k, v]) => (v.ignoredFiles?.length ? [[k, v.ignoredFiles]] : []))),
       fileAnswers: Object.fromEntries(Object.entries(s.linkPrefs).flatMap(([k, v]) => (v.fileKinds ? [[k, Object.values(v.fileKinds)]] : []))),
       browsers: (await installedBrowsers()).map(({ id, name, privateMode, isDefault }) => ({ id, name, privateMode, isDefault })),
@@ -406,6 +410,7 @@ export class AppController {
         discoveryCache: this.state.discovery,
         mutedSources: this.state.settings.mutedSources,
         isMuted: (key, site) => [...this.state.settings.mutedSources, ...(this.state.linkPrefs[key]?.mutedSources ?? [])].some((s) => s === site),
+        signedInToPatreon,
         onProgress: (progress) => {
           this.progress = progress;
           this.emit({ type: 'progress', progress });
@@ -444,6 +449,8 @@ export class AppController {
       this.live.clear();
       await this.commit();
     }
+    // Pages it read before a sign-in part-way through still say locked for the signed-out reader.
+    void this.recheckPatreonLocks();
     const result = this.state.lastResult;
     if (this.checkMessage) return;
     if (this.state.settings.autoInstall && result && this.afterCheck) await this.afterCheck(result);
@@ -1104,6 +1111,7 @@ export class AppController {
         dismissed: this.state.dismissed,
         linkPrefs: this.state.linkPrefs,
         isMuted: (k, site) => [...this.state.settings.mutedSources, ...(this.state.linkPrefs[k]?.mutedSources ?? [])].some((s) => s === site),
+        signedInToPatreon,
       });
       // Removed again while it was being read: leave it removed.
       if (!info || !this.state.linkPrefs[key]?.manual.some(same)) return;
@@ -1223,8 +1231,86 @@ export class AppController {
     if (!this.running) this.pool.reset(status.site);
     else this.pool.clearVerification(status.site);
     await this.commit();
+    if (status.site === 'patreon' && status.signedIn) void this.recheckPatreonLocks();
     return status;
   }
+
+  /**
+   * Reads again the Patreon pages that matter (an update pending, or a pack offered on its own) whose
+   * post was locked only for being read signed out, now that the user is signed in: they were offered
+   * Sign in to get it, and should see Get it or Update, or Open page if they aren't a patron, without
+   * waiting for the next check. One request per such page, and nothing when there are none. While a
+   * page is read its row or card says "Checking…"; if the read fails, the lock stands (Open page).
+   */
+  async recheckPatreonLocks(only?: { key: string; url?: string }): Promise<void> {
+    if (this.running) return;
+    const muted = (key: string): boolean => [...this.state.settings.mutedSources, ...(this.state.linkPrefs[key]?.mutedSources ?? [])].includes('patreon');
+    const stale = (this.state.lastResult?.creators ?? []).flatMap((c) => {
+      if (muted(c.key) || (only && c.key !== only.key)) return [];
+      const behind = outdatedRemotes(c.remotes, c.localUpdatedAt, c.dismissedAt);
+      return c.remotes
+        .filter((r) => r.listing.source === 'patreon' && r.locked && r.lockedSignedOut && (r.owned === 'no' || behind.includes(r)))
+        .filter((r) => !only?.url || linkKey(r.listing.url) === linkKey(only.url))
+        // Already being read (another row's Check again, or the re-read after signing in): once is enough.
+        .filter((r) => !this.rechecking.has(r.listing.url))
+        .map((r) => ({ c, r }));
+    });
+    if (!stale.length) return;
+    // Claimed before anything is awaited, so a second call (a double-click, or a click just as the
+    // re-read after signing in starts) finds them taken and doesn't read them twice.
+    for (const { r } of stale) this.rechecking.add(r.listing.url);
+    try {
+      // Cookies that can't be read are no sign-in to go on.
+      if (!(await signedInToPatreon().catch(() => false))) return;
+      await this.commit();
+      await this.recheckPages(stale);
+    } finally {
+      // Released however this ends (a failed save part-way included), or they'd say "Checking…"
+      // and turn away every later Check again until WhimWatch restarts.
+      for (const { r } of stale) this.rechecking.delete(r.listing.url);
+    }
+  }
+
+  private async recheckPages(stale: { c: CreatorResult; r: RemoteInfo }[]): Promise<void> {
+    for (const { c, r } of stale) {
+      const same = (u: string): boolean => linkKey(u) === linkKey(r.listing.url);
+      let info: RemoteInfo | undefined;
+      try {
+        info = await checkAddedPage({ key: c.key, name: c.name, files: c.files }, r.listing, c.remotes, {
+          dirs: this.state.dirs,
+          fetcher: this.pool.fetcher(),
+          dismissed: this.state.dismissed,
+          linkPrefs: this.state.linkPrefs,
+          signedInToPatreon,
+        });
+      } catch (err) {
+        console.warn('Reading a Patreon page again after signing in failed:', englishMessage(err));
+      }
+      for (const copy of this.copiesOf(c.key)) {
+        const read = info && info.status === 'ok' ? info : undefined;
+        copy.remotes = read
+          ? datePacks({ key: copy.key, name: copy.name, files: copy.files }, [...copy.remotes.filter((x) => !same(x.listing.url)), { ...read, listing: r.listing }])
+          : // Couldn't tell: the lock stands, as "not a patron", and the page is the way in.
+            copy.remotes.map((x) => (same(x.listing.url) ? { ...x, lockedSignedOut: undefined } : x));
+        this.catchUp(copy);
+      }
+      this.rechecking.delete(r.listing.url);
+      await this.commit();
+    }
+  }
+
+  /**
+   * "Check again" on a row or card whose Patreon lock was seen while signed out: the user's own ask,
+   * about that creator only, and on a card about its one page.
+   */
+  async recheckPatreon(key: unknown, url?: unknown): Promise<AppSnapshot> {
+    if (typeof key !== 'string' || !key || (url !== undefined && typeof url !== 'string')) throw new Error('Invalid recheck');
+    await this.recheckPatreonLocks({ key, url });
+    return this.commit();
+  }
+
+  /** Patreon pages being read again after a sign-in (see recheckPatreonLocks), for "Checking…". */
+  private rechecking = new Set<string>();
 
   async signOut(site: unknown): Promise<AccountStatus> {
     const status = await signOut(browserSite(site), this.pool);
@@ -1290,6 +1376,11 @@ export class AppController {
     });
     notification.show();
   }
+}
+
+/** Whether the user is signed in to Patreon right now, read from its cookies as the page is. */
+function signedInToPatreon(): Promise<boolean> {
+  return accountStatus('patreon').then((a) => a.signedIn);
 }
 
 /** Linux stores cookies with a fixed, public key when no keyring (GNOME Keyring, KWallet) is available. */

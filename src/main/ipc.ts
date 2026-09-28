@@ -36,6 +36,7 @@ export function registerIpc(controller: AppController, updater: Updater, isTrust
     findDuplicates: () => controller.findDuplicates(),
     cancelDuplicates: async () => controller.cancelDuplicates(),
     removeDuplicates: (choices) => controller.removeDuplicates(choices),
+    recheckPatreon: (key, url) => controller.recheckPatreon(key, url),
     openExternal: (url) => controller.openExternal(url),
     showLinkMenu: (url) => controller.showLinkMenu(url),
     openBackupFolder: (id) => controller.openBackupFolder(id),

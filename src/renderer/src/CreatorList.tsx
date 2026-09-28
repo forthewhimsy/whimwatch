@@ -11,6 +11,7 @@ import {
   LogIn,
   PackagePlus,
   Plus,
+  RefreshCw,
   RotateCcw,
   ShieldCheck,
   Trash2,
@@ -21,11 +22,12 @@ import { type CreatorResult, type FileAnswer, type RemoteInfo, UPDATE_SITES, typ
 import { ownedRemotes } from '../../shared/updatable';
 import {
   afterCheck,
-  gettableNewPack,
   ignoredFilesFor,
   maybeUpdatesFor,
   type NewFile,
   newFilesFor,
+  type NewPackAction,
+  newPackAction,
   newPacksFor,
   rowAction,
   rowStatus,
@@ -39,7 +41,7 @@ import { useToast } from './toast';
 import type { UpdateTarget } from './UpdateDialog';
 import { api, type AppModel } from './useApp';
 import { useSiteToggle } from './useSiteToggle';
-import { Button, Checkbox, Disclosure, IconButton, MenuButton, StatusMarker } from './ui';
+import { Button, Checkbox, Disclosure, IconButton, MenuButton, Spinner, StatusMarker } from './ui';
 
 export interface Row {
   creator: CreatorResult;
@@ -146,6 +148,23 @@ function CreatorRow({
           {action.kind === 'open' && (
             <Button size="sm" icon={ExternalLink} onClick={() => app.run(() => api.openExternal(action.url))} onContextMenu={linkMenu(app, action.url)}>
               {m.common.openPage}
+            </Button>
+          )}
+          {action.kind === 'checking' && (
+            <Button size="sm" disabled>
+              <Spinner size={14} /> {m.settings.checkingEllipsis}
+            </Button>
+          )}
+          {action.kind === 'recheck' && (
+            // A check reads the page signed in anyway, and this can't start during one.
+            <Button
+              size="sm"
+              icon={RefreshCw}
+              disabled={snapshot.running}
+              title={snapshot.running ? afterCheck() : undefined}
+              onClick={() => app.run(() => api.recheckPatreon(c.key))}
+            >
+              {m.common.checkAgain}
             </Button>
           )}
           {action.kind === 'verify' && (
@@ -519,7 +538,7 @@ function NewPackCard({
   const progress = app.updates[creator.key];
   const busy = progress !== undefined && progress.stage !== 'done' && progress.stage !== 'error';
   // A patrons-only post would 403: offer the page, not a button that fails.
-  const gettable = gettableNewPack(r, snapshot);
+  const action = newPackAction(r, snapshot);
 
   const notInterested = async (): Promise<void> => {
     const done = await app.run(() => api.rejectLink(creator.key, r.listing.url));
@@ -540,32 +559,24 @@ function NewPackCard({
         <span className="source-title" title={name}>
           {name}
           {/* Unreachable while classifyRemotes only reads wicked.cc and `locked` is Patreon's alone.
-              Kept with `gettable` below so that extending classification to Patreon offers the page
+              Kept with `action` below so that extending classification to Patreon offers the page
               rather than a download button that 403s, which is the point of both. */}
           {r.locked && <Lock size={13} className="faint" aria-label={m.creator.patronsOnly} />}
         </span>
         <span className="source-sub faint">{m.creator.posted(formatShortDate(r.updatedAt))}</span>
       </div>
-      {gettable ? (
-        <Button
-          size="sm"
-          icon={Download}
-          disabled={busy || snapshot.running}
-          title={snapshot.running ? afterCheck() : undefined}
-          onClick={() => onUpdate({ key: creator.key, name: creator.name, listingUrl: r.listing.url, packName: r.title })}
-        >
-          {m.creator.getIt}
-        </Button>
-      ) : (
-        // Patrons-only: a download button here would only ever 403.
-        <Button size="sm" icon={ExternalLink} onClick={() => app.run(() => api.openExternal(r.listing.url))} onContextMenu={linkMenu(app, r.listing.url)}>
-          {m.common.openPage}
-        </Button>
-      )}
+      <NewPackButton
+        action={action}
+        creatorKey={creator.key}
+        remote={r}
+        app={app}
+        busy={busy}
+        onGet={() => onUpdate({ key: creator.key, name: creator.name, listingUrl: r.listing.url, packName: r.title })}
+      />
       <MenuButton
         label={m.creator.moreFor(name)}
         items={[
-          ...(gettable ? [{ label: m.common.openPage, icon: ExternalLink, onSelect: () => void app.run(() => api.openExternal(r.listing.url)) }] : []),
+          ...(action.kind !== 'open' ? [{ label: m.common.openPage, icon: ExternalLink, onSelect: () => void app.run(() => api.openExternal(r.listing.url)) }] : []),
           { label: m.creator.openPrivately, icon: Copy, onSelect: () => void app.run(() => api.showLinkMenu(r.listing.url)) },
           { label: m.creator.notInterested, icon: BellOff, danger: true, onSelect: () => void notInterested() },
         ]}
@@ -601,7 +612,7 @@ function NewFileCard({
   const name = hideTitle ? m.creator.newFileOnPage(label) : file.name;
   const progress = app.updates[creator.key];
   const busy = progress !== undefined && progress.stage !== 'done' && progress.stage !== 'error';
-  const gettable = gettableNewPack(r, snapshot);
+  const action = newPackAction(r, snapshot);
 
   const notInterested = async (): Promise<void> => {
     const done = await app.run(() => api.setFileIgnored(creator.key, file.name, true));
@@ -623,26 +634,19 @@ function NewFileCard({
         </span>
         <span className="source-sub faint">{m.creator.posted(formatShortDate(file.updatedAt))}</span>
       </div>
-      {gettable ? (
-        <Button
-          size="sm"
-          icon={Download}
-          disabled={busy || snapshot.running}
-          title={snapshot.running ? afterCheck() : undefined}
-          // The page holds their pack and its variants too: download this one file, nothing else.
-          onClick={() => onUpdate({ key: creator.key, name: creator.name, listingUrl: r.listing.url, packName: hideTitle ? undefined : file.name, fileName: file.name })}
-        >
-          {m.creator.getIt}
-        </Button>
-      ) : (
-        <Button size="sm" icon={ExternalLink} onClick={() => app.run(() => api.openExternal(r.listing.url))} onContextMenu={linkMenu(app, r.listing.url)}>
-          {m.common.openPage}
-        </Button>
-      )}
+      <NewPackButton
+        action={action}
+        creatorKey={creator.key}
+        remote={r}
+        app={app}
+        busy={busy}
+        // The page holds their pack and its variants too: download this one file, nothing else.
+        onGet={() => onUpdate({ key: creator.key, name: creator.name, listingUrl: r.listing.url, packName: hideTitle ? undefined : file.name, fileName: file.name })}
+      />
       <MenuButton
         label={m.creator.moreFor(name)}
         items={[
-          ...(gettable ? [{ label: m.common.openPage, icon: ExternalLink, onSelect: () => void app.run(() => api.openExternal(r.listing.url)) }] : []),
+          ...(action.kind !== 'open' ? [{ label: m.common.openPage, icon: ExternalLink, onSelect: () => void app.run(() => api.openExternal(r.listing.url)) }] : []),
           { label: m.creator.openPrivately, icon: Copy, onSelect: () => void app.run(() => api.showLinkMenu(r.listing.url)) },
           { label: m.creator.notInterested, icon: BellOff, danger: true, onSelect: () => void notInterested() },
         ]}
@@ -689,7 +693,8 @@ function MaybeUpdateCard({
       action: { label: m.common.undo, run: () => void app.run(() => api.setFileKind(creator.key, file.name, null)) },
     });
     // Straight to the update, as the row's Update button would; after a check, when that's greyed out.
-    if (kind === 'update' && !snapshot.running) onUpdate({ key: creator.key, name: creator.name });
+    // Signed out, the window could only fail: the row's own button says what's needed instead.
+    if (kind === 'update' && !snapshot.running && newPackAction(r, snapshot).kind === 'get') onUpdate({ key: creator.key, name: creator.name });
   };
 
   const notInterested = async (): Promise<void> => {
@@ -727,6 +732,69 @@ function MaybeUpdateCard({
         ]}
       />
     </div>
+  );
+}
+
+/**
+ * The button on a card for something new on a page: Get it, or what stands in its way. Signed out,
+ * it signs in (the card redraws as Get it once that's done); for anything else, the page to open.
+ */
+function NewPackButton({
+  action,
+  creatorKey,
+  remote,
+  app,
+  busy,
+  onGet,
+}: {
+  action: NewPackAction;
+  creatorKey: string;
+  remote: RemoteInfo;
+  app: AppModel;
+  busy: boolean;
+  onGet: () => void;
+}) {
+  const running = app.snapshot?.running;
+  const m = t();
+  if (action.kind === 'get') {
+    return (
+      <Button size="sm" icon={Download} disabled={busy || running} title={running ? afterCheck() : undefined} onClick={onGet}>
+        {m.creator.getIt}
+      </Button>
+    );
+  }
+  if (action.kind === 'checking') {
+    return (
+      <Button size="sm" disabled>
+        <Spinner size={14} /> {m.settings.checkingEllipsis}
+      </Button>
+    );
+  }
+  if (action.kind === 'recheck') {
+    return (
+      <Button
+        size="sm"
+        icon={RefreshCw}
+        disabled={running}
+        title={running ? afterCheck() : undefined}
+        onClick={() => app.run(() => api.recheckPatreon(creatorKey, remote.listing.url))}
+      >
+        {m.common.checkAgain}
+      </Button>
+    );
+  }
+  if (action.kind === 'sign-in') {
+    return (
+      <Button size="sm" icon={LogIn} onClick={() => app.run(() => api.signIn(action.site))}>
+        {m.common.signInTo(SOURCE_LABEL[action.site])}
+      </Button>
+    );
+  }
+  // Patrons-only, or no download to be had: a download button here would only ever fail.
+  return (
+    <Button size="sm" icon={ExternalLink} onClick={() => app.run(() => api.openExternal(remote.listing.url))} onContextMenu={linkMenu(app, remote.listing.url)}>
+      {m.common.openPage}
+    </Button>
   );
 }
 

@@ -194,9 +194,10 @@ too.
   (`.exe`, scripts…) are refused, and only `.package`/`.ts4script` files are installed.
 - **Installing** refuses to run while The Sims 4 is open. Replaced files go to a backup folder, and
   the game's `localthumbcache.package` is cleared so thumbnails refresh.
-- **Old packages:** a downloaded file replaces the installed file with the **same name**. Installed
-  files from that creator that aren't in the download are listed but kept, unless you tick them for
-  removal. *Update all* never removes anything.
+- **Old packages:** a downloaded file replaces the installed file with the **same name**, or another
+  version or edition of it under a different name (`Pack_v2` for `Pack_v1`). Other installed files from that creator
+  that aren't in the download are listed but kept, unless you tick them for removal; *Update all*
+  never ticks them.
 - **Duplicate files** are only looked for when you ask, and only removed after you've picked which
   copy stays. Removed copies go to a backup folder like replaced files. See
   [Extras and tools](#extras-and-tools).
@@ -284,8 +285,9 @@ Windows, FileVault on macOS, LUKS on Linux) and a password on your user account.
   its name would mute the whole site for them rather than set one pack aside.
 - Patreon posts are matched by title ("Animations", "Update", "v1.2"…). A release with an unusual
   title may be missed; polls and previews are ignored.
-- Replacement is by file name. If a creator renames a pack between versions, the old file stays unless you
-  tick it under "Not in this download", so both may be installed.
+- Replacement is by file name, allowing for a version number or an edition tag (Public, Patreon, Free,
+  EA…) in it. If a creator renames a pack any other way between versions, the old file stays unless
+  you tick it under "Not in this download", so both may be installed.
 - Cloudflare sometimes asks for a human check. WhimWatch then shows a *Verify* button that opens the
   site so you can complete it. It leaves that site alone until you do, so the rest of the check isn't
   held up; the window closes itself once you're through, and a check still running carries on.

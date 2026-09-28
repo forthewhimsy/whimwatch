@@ -94,9 +94,35 @@ export function ignoredFilesFor(c: CreatorResult, snapshot: AppSnapshot): NewFil
   return found.filter((f, i) => found.findIndex((g) => g.name.toLowerCase() === f.name.toLowerCase()) === i);
 }
 
-/** A new pack can be downloaded when its own page can be: locked Patreon posts can only be opened. */
-export function gettableNewPack(remote: RemoteInfo, snapshot: AppSnapshot): boolean {
-  return updatableRemotes([remote], signedInCheck(snapshot)).length > 0;
+export type NewPackAction = { kind: 'get' } | { kind: 'sign-in'; site: BrowserSite } | { kind: 'checking' } | { kind: 'recheck' } | { kind: 'open' };
+
+/**
+ * Signed in to Patreon, but the page's lock is still the one seen while signed out (a sign-in whose
+ * re-read didn't run, such as one cut short by quitting): whether they can get it isn't known yet.
+ * Nothing reads it again unasked, so the button offers to (Check again).
+ */
+function staleLock(remote: RemoteInfo, signedIn: SignedIn): boolean {
+  return remote.listing.source === 'patreon' && remote.status === 'ok' && remote.locked === true && remote.lockedSignedOut === true && signedIn('patreon');
+}
+
+/**
+ * What a card for something new on a page offers, as the row does for an update: Get it when the
+ * page can be downloaded from now; Sign in when that's all that's missing, so the card says so and
+ * turns into Get it by itself once signed in; otherwise the page to open (a post for patrons they
+ * aren't one of, or a page with no download link or that couldn't be read). Signed out of Patreon,
+ * every patrons-only post reads as locked, so a lock says nothing until they sign in: Sign in. Just
+ * after they have, the page is read again (recheckPatreonLocks), and says "Checking…" meanwhile.
+ */
+export function newPackAction(remote: RemoteInfo, snapshot: AppSnapshot): NewPackAction {
+  const signedIn = signedInCheck(snapshot);
+  if (updatableRemotes([remote], signedIn).length > 0) return { kind: 'get' };
+  if (snapshot.rechecking?.includes(remote.listing.url)) return { kind: 'checking' };
+  if (remote.status === 'ok' && remote.downloadUrl !== undefined) {
+    if (remote.listing.source === 'loverslab' && !signedIn('loverslab')) return { kind: 'sign-in', site: 'loverslab' };
+    if (remote.listing.source === 'patreon' && !signedIn('patreon')) return { kind: 'sign-in', site: 'patreon' };
+  }
+  if (staleLock(remote, signedIn)) return { kind: 'recheck' };
+  return { kind: 'open' };
 }
 
 export interface DownloadOption {
@@ -203,6 +229,10 @@ export type RowAction =
   | { kind: 'update' }
   | { kind: 'sign-in'; site: BrowserSite }
   | { kind: 'open'; url: string }
+  /** A Patreon page being read again after a sign-in (see newPackAction). */
+  | { kind: 'checking' }
+  /** A Patreon page whose lock was seen signed out, now signed in: read it again (see newPackAction). */
+  | { kind: 'recheck' }
   | { kind: 'verify'; site: BrowserSite }
   | { kind: 'add-page' }
   | { kind: 'none' };
@@ -212,7 +242,10 @@ export function rowAction(c: CreatorResult, snapshot: AppSnapshot): RowAction {
   const status = rowStatus(c);
   if (status === 'update') {
     if (downloadableRemote(c, snapshot)) return { kind: 'update' };
-    const { signIn, url } = blocker(c, signedInCheck(snapshot));
+    if (c.remotes.some((r) => snapshot.rechecking?.includes(r.listing.url))) return { kind: 'checking' };
+    const signedIn = signedInCheck(snapshot);
+    if (updateSources(c.remotes, c.localUpdatedAt, c.dismissedAt).some((r) => staleLock(r, signedIn))) return { kind: 'recheck' };
+    const { signIn, url } = blocker(c, signedIn);
     if (signIn) return { kind: 'sign-in', site: signIn };
     return url ? { kind: 'open', url } : { kind: 'none' };
   }

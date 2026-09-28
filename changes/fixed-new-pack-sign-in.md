@@ -1,0 +1,1 @@
+- Cards for new packs and new files on a creator's pages say "Sign in to LoversLab" (or Patreon) when signing in is all that's needed to get them, and turn into "Get it" once you're signed in. Before, they only offered to open the page, with nothing saying why. Open page is in the card's ⋯ menu.

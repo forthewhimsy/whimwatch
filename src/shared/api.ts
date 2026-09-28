@@ -93,6 +93,8 @@ export interface AppSnapshot {
   creatorMutedSources: Record<string, UpdateSite[]>;
   /** Creator key → new files on their pages the user isn't interested in, by lower-case name. */
   ignoredFiles: Record<string, string[]>;
+  /** Patreon pages being read again after a sign-in, whose rows and cards say "Checking…". */
+  rechecking?: string[];
   /** What the user said archives on each creator's pages are, by creator key: listed so each can be taken back. */
   fileAnswers?: Record<string, FileAnswer[]>;
   browsers: LinkBrowser[];
@@ -290,6 +292,11 @@ export interface WhimWatchApi {
    * `keep`. Groups are named, never paths, so nothing outside what was found can be touched.
    */
   removeDuplicates(choices: { group: string; keep: string }[]): Promise<DuplicateRemoval>;
+  /**
+   * Reads again a creator's Patreon pages whose lock was seen while signed out, now that the user is
+   * signed in; with `url`, only that page.
+   */
+  recheckPatreon(key: string, url?: string): Promise<AppSnapshot>;
   openExternal(url: string): Promise<void>;
   /** Native context menu for a link: open, open privately, copy. */
   showLinkMenu(url: string): Promise<void>;
@@ -369,6 +376,7 @@ export const API_METHODS = [
   'findDuplicates',
   'cancelDuplicates',
   'removeDuplicates',
+  'recheckPatreon',
   'openExternal',
   'showLinkMenu',
   'openBackupFolder',

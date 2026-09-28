@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { runBatch } from '../src/core/batch.js';
 import type { AppSnapshot } from '../src/shared/api.js';
 import type { CoreResult, CreatorResult, InstallRecord, RemoteInfo, SeenEvent } from '../src/shared/types.js';
-import { rowAction, rowStatus, rowSummary, sortCreators, updateCandidates } from '../src/renderer/src/eligibility.js';
+import { newPackAction, rowAction, rowStatus, rowSummary, sortCreators, updateCandidates } from '../src/renderer/src/eligibility.js';
 import { acceleratorFromKey, acceleratorKeys, formatCount, pageLabel, shortTitle, timeAgo } from '../src/renderer/src/format.js';
 import { t } from '../src/shared/i18n/index.js';
 import { gameHealth } from '../src/renderer/src/health.js';
@@ -75,6 +75,30 @@ describe('creator rows', () => {
     expect(rowAction(creator('D', 'needs-verification', [remote('loverslab', { status: 'needs-verification' })]), snap)).toEqual({ kind: 'verify', site: 'loverslab' });
     expect(rowAction(creator('E', 'unknown', []), snap)).toEqual({ kind: 'add-page' });
     expect(rowAction(creator('F', 'up-to-date', [remote('wickedcc')]), snap)).toEqual({ kind: 'none' });
+  });
+
+  it("offer, on a card for something new, Get it or what's in its way, as the row does", () => {
+    const out = snapshot();
+    expect(newPackAction(remote('wickedcc'), out)).toEqual({ kind: 'get' });
+    // Signed out, and that's all that's missing: the card says so, and turns into Get it once signed in.
+    expect(newPackAction(remote('loverslab'), out)).toEqual({ kind: 'sign-in', site: 'loverslab' });
+    expect(newPackAction(remote('patreon'), out)).toEqual({ kind: 'sign-in', site: 'patreon' });
+    expect(newPackAction(remote('loverslab'), snapshot({ loverslab: true }))).toEqual({ kind: 'get' });
+    // Signed out, every patrons-only post reads as locked: signing in is what may unlock it.
+    expect(newPackAction(remote('patreon', { locked: true, lockedSignedOut: true }), out)).toEqual({ kind: 'sign-in', site: 'patreon' });
+    // Read again just after signing in: "Checking…", on the card and on the row.
+    const rechecking = { ...snapshot({ patreon: true }), rechecking: ['https://patreon.test/page'] } as AppSnapshot;
+    expect(newPackAction(remote('patreon', { locked: true, lockedSignedOut: true }), rechecking)).toEqual({ kind: 'checking' });
+    expect(rowAction(creator('P', 'update-available', [remote('patreon', { locked: true, lockedSignedOut: true })]), rechecking)).toEqual({ kind: 'checking' });
+    // Signed in, but the lock is still the signed-out one (its re-read never ran): nothing reads it
+    // again unasked, so the button offers to.
+    const stale = remote('patreon', { locked: true, lockedSignedOut: true });
+    expect(newPackAction(stale, snapshot({ patreon: true }))).toEqual({ kind: 'recheck' });
+    expect(rowAction(creator('Q', 'update-available', [stale]), snapshot({ patreon: true }))).toEqual({ kind: 'recheck' });
+    // Signed in and still locked: not a patron. The page to open.
+    expect(newPackAction(remote('patreon', { locked: true }), snapshot({ patreon: true }))).toEqual({ kind: 'open' });
+    expect(newPackAction(remote('loverslab', { downloadUrl: undefined }), out)).toEqual({ kind: 'open' });
+    expect(newPackAction(remote('loverslab', { status: 'error' }), out)).toEqual({ kind: 'open' });
   });
 
   it('say when, not two dates to compare', () => {

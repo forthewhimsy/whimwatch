@@ -93,6 +93,11 @@ export interface CheckOptions {
    * everyone or for this creator) is never contacted from then on, not only from the next check.
    */
   isMuted?: (creatorKey: string, site: SourceId) => boolean;
+  /**
+   * Whether the user is signed in to Patreon as a page is read: signed out, every patrons-only post
+   * reads as locked, which says nothing yet about whether they're a patron (RemoteInfo.lockedSignedOut).
+   */
+  signedInToPatreon?: () => Promise<boolean>;
   onProgress?: (progress: CheckProgress) => void;
   /** Called as each creator finishes, for incremental UI updates. */
   onCreator?: (creator: CreatorResult) => void;
@@ -201,7 +206,7 @@ export async function runCheck(opts: CheckOptions): Promise<CheckOutput> {
         progress('check', ++checked, totalListings(), `${plan.group.name}: ${listing.source}`);
         continue;
       }
-      const { info, findings } = await checkListing(listing, opts.fetcher, now, opts.signal);
+      const { info, findings } = await checkListing(listing, opts.fetcher, now, opts.signal, opts.signedInToPatreon);
       if (findings?.expandTo?.length) {
         // An index page: check the packs it lists instead of the index itself.
         for (const url of findings.expandTo) addUrl(add, url, listing.origin);
@@ -381,7 +386,7 @@ async function datePagesByFiles(group: CreatorGroup, remotes: RemoteInfo[], opts
  * index): expanding those is a check's job. `current` is the creator's pages as they stand.
  */
 export async function checkAddedPage(group: CreatorGroup, listing: Listing, current: readonly RemoteInfo[], opts: CheckOptions): Promise<RemoteInfo | undefined> {
-  const { info, findings } = await checkListing(listing, opts.fetcher, opts.now ?? Date.now, opts.signal);
+  const { info, findings } = await checkListing(listing, opts.fetcher, opts.now ?? Date.now, opts.signal, opts.signedInToPatreon);
   if (findings?.expandTo?.length) return undefined;
   const same = (r: RemoteInfo): boolean => linkKey(r.listing.url) === linkKey(listing.url);
   const remotes = [...current.filter((r) => !same(r)), info];
@@ -394,13 +399,15 @@ async function checkListing(
   fetcher: Fetcher,
   now: () => number,
   signal?: AbortSignal,
+  signedInToPatreon?: () => Promise<boolean>,
 ): Promise<{ info: RemoteInfo; findings?: SourceFindings }> {
   const checkedAt = now();
   if (listing.source === 'wwmod') return { info: { listing, checkedAt, status: 'error', ...problemFields({ code: 'unsupported-link' }) } };
   try {
     const { status, author: _author, patreonLinks, expandTo, ...rest } = await CHECKERS[listing.source](listing, fetcher);
     if (rest.title !== undefined) rest.title = plainTitle(rest.title);
-    return { info: { listing, checkedAt, status: status ?? 'ok', ...rest }, findings: { patreonLinks, expandTo } };
+    const signedOut = rest.locked && signedInToPatreon ? !(await signedInToPatreon().catch(() => true)) : false;
+    return { info: { listing, checkedAt, status: status ?? 'ok', ...rest, ...(signedOut && { lockedSignedOut: true as const }) }, findings: { patreonLinks, expandTo } };
   } catch (err) {
     if (err instanceof CancelledError) {
       // Only the user's Cancel stops the check. A page cut off from outside it (signing out, or
