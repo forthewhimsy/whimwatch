@@ -1,1 +1,0 @@
-- Settings → Tools → Duplicate files finds mod files that are in your Mods folders more than once, byte for byte. You pick the copy to keep in each case, and the others are removed. They're backed up first, and History can put them back.

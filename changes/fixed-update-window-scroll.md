@@ -1,1 +1,0 @@
-- The Update window scrolls when an update has more files than fit. Before, the list was cut off at the bottom of the window with no scroll bar, so the last files couldn't be seen or unticked. Update all had the same problem with a long list of creators.

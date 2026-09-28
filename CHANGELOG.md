@@ -3,6 +3,30 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-09-28
+
+### Added
+
+- Settings → Tools → Duplicate files finds mod files that are in your Mods folders more than once, byte for byte. You pick the copy to keep in each case. They're backed up first, and History can put them back.
+- The Windows installer lets you choose where WhimWatch is installed the first time. It goes in a folder named WhimWatch inside the one you choose, so uninstalling never removes anything else accidentally. Once installed, running a newer Setup updates WhimWatch where it is, without asking again.
+
+### Changed
+
+- Dates now always show the year
+- When an update holds a newer version or edition of one of your files under a different name ("Pack_v2" for your "Pack_v1"), it replaces your file instead of installing next to it, so the two no longer both load. The Update window says which file it takes the place of, your old file is backed up, and Undo puts it back. Before, the old file stayed, listed under "Not in this download" for you to tick.
+- The Update window lists the files that replace yours apart from new files you don't have yet, each under its own heading, and says that ticked files are the ones that will be installed. Each file it replaces shows the date of your copy.
+
+### Fixed
+
+- A zip (or rar or 7z) posted after your files, on a LoversLab page that has your pack, is no longer called a new pack. It is often your pack re-uploaded, and what's inside can't be known without downloading it, so WhimWatch lists it under "Might be an update" and asks: "It's an update" opens the Update window, "It's a separate pack" offers it with the new packs. Your answer is remembered for that pack's later uploads too, and listed in the creator's details, where "Ask again" takes it back. Its arrival is announced as "might be an update".
+- Getting a zip with "Get it" clears its card straight away. Before, the card stayed, because no file in your Mods folder has the zip's name. A zip you've installed, by "Get it" or as an update, is also left out of later updates from its page instead of being downloaded again.
+- When a page has several versions of a file you don't have (V6 and V7), only the newest is offered.
+- Updates install where your files are now. After you moved or deleted files, an update used to put copies back in their old folders, next to the files you'd moved.
+- Cards for new packs and new files on a creator's pages say "Sign in to LoversLab" (or Patreon) when signing in is all that's needed to get them, and turn into "Get it" once you're signed in. Before, they only offered to open the page. Open page is in the card's "⋯" menu.
+- A Patreon post for patrons, found while you were signed out of Patreon, now says "Sign in to Patreon" rather than only offering to open the page (signed out, every patrons-only post looks locked). Once you sign in, WhimWatch reads that post again, so you get "Update" or "Get it" if you're a patron, or the page if you aren't, without waiting for the next check. Opening WhimWatch never reads these by itself unless you've turned on checking when it opens.
+- An update no longer brings new packs posted on its page since your last update. Only files posted together with the update come with it; the others stay under "New on a page of theirs" for you to get or not.
+- The Update window scrolls when an update has more files than fit. Before, the list was cut off at the bottom of the window with no scroll bar, so the last files couldn't be seen or unticked. Update all had the same problem with a long list of creators.
+
 ## [0.3.1] - 2026-09-25
 
 ### Added
