@@ -698,6 +698,10 @@ export const it = {
     backupsKept: 'I backup vengono conservati finché non li elimini.',
     openBackups: 'Apri la cartella dei backup',
     skippedBefore: "L'ultima volta hai scelto di non installarlo",
+    tickedInstalled: 'I file selezionati verranno installati',
+    replacesYours: (n: number) => `Sostituisce file che hai · ${count(n)}`,
+    newFiles: (n: number) => `File nuovi non ancora nella tua cartella Mods · ${count(n)}`,
+    yours: (date: string) => `La tua copia: ${date}`,
     notInDownload: 'Non presenti in questo download',
     notInDownloadHint:
       'Potrebbe essere una versione più vecchia, o un extra preso altrove. Selezionalo per rimuoverlo (ne viene fatto il backup anche in questo caso).',

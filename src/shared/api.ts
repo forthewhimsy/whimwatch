@@ -129,6 +129,8 @@ export interface PlannedFile {
   kind: 'replace' | 'add';
   /** Byte-identical to the installed file, so nothing needs copying. */
   unchanged?: boolean;
+  /** For a replacement: the date of the user's copy, shown beside it so the two can be compared. */
+  installedAt?: number;
 }
 
 export interface UpdatePlan {

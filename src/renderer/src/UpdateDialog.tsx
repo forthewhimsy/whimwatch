@@ -421,16 +421,39 @@ export function UpdateDialog({ target, app, onClose }: { target: UpdateTarget; a
           ))}
 
           <div className="file-changes">
-            {[...replaceFiles, ...addFiles].map((f) => (
-              <FileLine
-                key={f.target}
-                kind={f.kind}
-                path={f.target}
-                checked={!skip.includes(f.target)}
-                onToggle={() => setSkip(toggle(skip, f.target))}
-                note={plan?.startUnticked?.includes(f.target) ? m.skippedBefore : undefined}
-              />
-            ))}
+            {/* Headed apart, so the ticks read as "install this" and not as "you have this". Not
+                "newer versions": the page picked can be older than the user's copy. The hint goes under
+                the first heading only, since a tick under "Not in this download" removes a file. */}
+            {(
+              [
+                [replaceFiles, m.replacesYours],
+                [addFiles, m.newFiles],
+              ] as const
+            ).map(
+              ([files, heading]) =>
+                files.length > 0 && (
+                  <div key={files[0]!.kind} className="file-section">
+                    <div className="section-label">{heading(files.length)}</div>
+                    {files === (replaceFiles.length ? replaceFiles : addFiles) && <p className="muted small">{m.tickedInstalled}</p>}
+                    {files.map((f) => (
+                      <FileLine
+                        key={f.target}
+                        kind={f.kind}
+                        path={f.target}
+                        checked={!skip.includes(f.target)}
+                        onToggle={() => setSkip(toggle(skip, f.target))}
+                        note={
+                          plan?.startUnticked?.includes(f.target)
+                            ? m.skippedBefore
+                            : f.installedAt !== undefined
+                              ? m.yours(formatShortDate(f.installedAt))
+                              : undefined
+                        }
+                      />
+                    ))}
+                  </div>
+                ),
+            )}
             {/* Not for a pack they're getting: nothing installed can be an older version of a pack
                 they never had, so every file the creator made would be listed for removal. */}
             {!newPack && plan.possiblyObsolete.length > 0 && (

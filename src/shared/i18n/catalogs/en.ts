@@ -696,6 +696,12 @@ export const en = {
     backupsKept: 'Backups are kept until you delete them.',
     openBackups: 'Open backups folder',
     skippedBefore: 'You chose not to install this last time',
+    tickedInstalled: 'Ticked files will be installed',
+    /** Not "newer versions": the page picked in the Update window can be older than the user's copy. */
+    replacesYours: (n: number) => `Replaces files you have · ${count(n)}`,
+    newFiles: (n: number) => `New files not in your Mods folder yet · ${count(n)}`,
+    /** The date of the user's copy, beside the file that replaces it. */
+    yours: (date: string) => `Yours: ${date}`,
     notInDownload: 'Not in this download',
     notInDownloadHint: "Might be an older version, or an extra you got elsewhere. Tick it to remove it (it's backed up too).",
     showFiles: (n: number) => plural(n, { one: 'Show # file', other: 'Show # files' }),

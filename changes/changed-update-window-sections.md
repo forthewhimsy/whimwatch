@@ -1,0 +1,1 @@
+- The Update window lists the files that replace yours apart from new files you don't have yet, each under its own heading, and says that ticked files are the ones that will be installed. Each file it replaces shows the date of your copy.

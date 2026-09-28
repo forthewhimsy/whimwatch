@@ -157,7 +157,7 @@ describe('installer', () => {
     });
 
     expect(plan.files).toEqual([
-      { source: join(extracted, 'WW_TESTER.package'), target: join(mods, 'Anims', 'Tester', 'WW_Tester.package'), kind: 'replace' },
+      { source: join(extracted, 'WW_TESTER.package'), target: join(mods, 'Anims', 'Tester', 'WW_Tester.package'), kind: 'replace', installedAt: installed[0]!.mtimeMs },
       { source: join(extracted, 'extra', 'WW_Tester_New.package'), target: join(mods, 'Anims', 'Tester', 'WW_Tester_New.package'), kind: 'add' },
       // Scripts go no deeper than one folder.
       { source: join(extracted, 'Tester_Script.ts4script'), target: join(mods, 'Anims', 'Tester_Script.ts4script'), kind: 'add' },

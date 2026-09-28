@@ -48,7 +48,7 @@ export function planInstall(input: PlanInput): UpdatePlan {
     const source = join(input.extractedDir, rel);
     const installed = installedByName.get(key);
     if (installed) {
-      files.push({ source, target: installed.path, kind: 'replace' });
+      files.push({ source, target: installed.path, kind: 'replace', installedAt: installed.mtimeMs });
       continue;
     }
     const dir = /\.ts4script$/i.test(name) ? scriptDir(homeDir, input.modsRoots) : homeDir;
