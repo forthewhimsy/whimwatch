@@ -6,6 +6,7 @@ import {
   Download,
   ExternalLink,
   EyeOff,
+  FileQuestion,
   Lock,
   LogIn,
   PackagePlus,
@@ -16,9 +17,21 @@ import {
 } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n';
-import { type CreatorResult, type RemoteInfo, UPDATE_SITES, type UpdateSite } from '../../shared/types';
+import { type CreatorResult, type FileAnswer, type RemoteInfo, UPDATE_SITES, type UpdateSite } from '../../shared/types';
 import { ownedRemotes } from '../../shared/updatable';
-import { afterCheck, gettableNewPack, ignoredFilesFor, type NewFile, newFilesFor, newPacksFor, rowAction, rowStatus, rowSummary, siteNames } from './eligibility';
+import {
+  afterCheck,
+  gettableNewPack,
+  ignoredFilesFor,
+  maybeUpdatesFor,
+  type NewFile,
+  newFilesFor,
+  newPacksFor,
+  rowAction,
+  rowStatus,
+  rowSummary,
+  siteNames,
+} from './eligibility';
 import { formatVersion } from '../../shared/version';
 import { formatShortDate, remoteSummary, pageLabel, shortTitle, SOURCE_LABEL, timeAgo } from './format';
 import { rich } from './rich';
@@ -88,6 +101,7 @@ function CreatorRow({
   const sources = [...new Set(c.remotes.map((r) => SOURCE_LABEL[r.listing.source]))];
   const packs = newPacksFor(c, snapshot);
   const files = newFilesFor(c, snapshot);
+  const maybe = maybeUpdatesFor(c, snapshot);
   const m = t();
 
   return (
@@ -101,6 +115,12 @@ function CreatorRow({
             {packs.length + files.length > 0 && !pending && (
               <span className="tag new-packs-tag">
                 <PackagePlus size={12} aria-hidden="true" /> {m.creator.newPacks(packs.length + files.length)}
+              </span>
+            )}
+            {/* Asks rather than tells: neither an update nor a new pack until the user says. */}
+            {maybe.length > 0 && !pending && (
+              <span className="tag new-packs-tag">
+                <FileQuestion size={12} aria-hidden="true" /> {m.creator.maybeTag(maybe.length)}
               </span>
             )}
             {m.common.files(c.files.length)}
@@ -179,6 +199,7 @@ function CreatorDetails({
   const pages = ownedRemotes(c.remotes);
   const packs = newPacksFor(c, snapshot);
   const files = newFilesFor(c, snapshot);
+  const maybe = maybeUpdatesFor(c, snapshot);
   const ignored = ignoredFilesFor(c, snapshot);
   // Pages the user added that nothing has read yet: reading one straight away can fail (signed out, a
   // challenge), and then only the next check will. Shown, so adding a page never looks like nothing.
@@ -186,6 +207,8 @@ function CreatorDetails({
   // Pages removed with "Not this creator's page" or "Not interested": listed so either can be taken
   // back after its toast is gone. Only their addresses are kept.
   const removed = snapshot.rejectedLinks[c.key] ?? [];
+  // What they said archives on these pages are: listed, so an answer can be taken back once its toast is gone.
+  const answers = snapshot.fileAnswers?.[c.key] ?? [];
   const toast = useToast();
   const m = t().creator;
   const showPageAgain = async (url: string): Promise<void> => {
@@ -195,6 +218,11 @@ function CreatorDetails({
     toast({ text: m.shownNextCheck });
   };
   const hiddenPacks = c.remotes.length - pages.length;
+  const askAgain = async (a: FileAnswer): Promise<void> => {
+    const done = await app.run(() => api.setFileKind(c.key, a.name, null));
+    if (!done) return;
+    toast({ text: m.willAskAgain, action: { label: t().common.undo, run: () => void app.run(() => api.setFileKind(c.key, a.name, a.kind)) } });
+  };
 
   return (
     <div className="creator-body">
@@ -236,6 +264,18 @@ function CreatorDetails({
         </ul>
       )}
 
+      {maybe.length > 0 && (
+        <>
+          <div className="section-label">{m.mightBeUpdates(maybe.length)}</div>
+          <p className="muted small">{m.maybeHint(maybe.length)}</p>
+          <div className="source-grid">
+            {maybe.map((f) => (
+              <MaybeUpdateCard key={`${f.remote.listing.url} ${f.name}`} file={f} creator={c} app={app} hideTitle={hideTitles} onUpdate={onUpdate} />
+            ))}
+          </div>
+        </>
+      )}
+
       {packs.length > 0 && (
         <>
           <div className="section-label">{m.packsYouDontHave}</div>
@@ -275,6 +315,24 @@ function CreatorDetails({
             </button>
           </span>
         </p>
+      )}
+      {answers.length > 0 && (
+        <Disclosure summary={m.answers(answers.length)} className="removed-pages">
+          <ul className="file-list">
+            {answers.map((a) => (
+              <li key={a.name}>
+                {/* The name is the answer's subject; with page titles hidden it's on hover, as a hidden title is. */}
+                <span className="small grow" title={a.name}>
+                  {hideTitles ? m.newFileOnPage(SOURCE_LABEL.loverslab) : a.name}
+                </span>
+                <span className="faint small">{a.kind === 'update' ? m.saidUpdate : m.saidPack}</span>
+                <button type="button" className="link-btn accent small" onClick={() => void askAgain(a)}>
+                  {m.askAgain}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Disclosure>
       )}
       {removed.length > 0 && (
         <Disclosure summary={m.pagesHidden(removed.length)} className="removed-pages">
@@ -585,6 +643,85 @@ function NewFileCard({
         label={m.creator.moreFor(name)}
         items={[
           ...(gettable ? [{ label: m.common.openPage, icon: ExternalLink, onSelect: () => void app.run(() => api.openExternal(r.listing.url)) }] : []),
+          { label: m.creator.openPrivately, icon: Copy, onSelect: () => void app.run(() => api.showLinkMenu(r.listing.url)) },
+          { label: m.creator.notInterested, icon: BellOff, danger: true, onSelect: () => void notInterested() },
+        ]}
+      />
+    </div>
+  );
+}
+
+/**
+ * An archive on a page of theirs, newer than their files, that could be their pack re-uploaded or a
+ * pack of its own (RemoteInfo.newFiles, `archive`). Its name is what tells them apart, and only the
+ * user can read it that way: they say which. An update opens the Update window, as the row's button
+ * would; a pack joins "New on a page of theirs".
+ */
+function MaybeUpdateCard({
+  file,
+  creator,
+  app,
+  hideTitle,
+  onUpdate,
+}: {
+  file: NewFile;
+  creator: CreatorResult;
+  app: AppModel;
+  hideTitle: boolean;
+  onUpdate: (target: UpdateTarget) => void;
+}) {
+  const toast = useToast();
+  const snapshot = app.snapshot!;
+  const r = file.remote;
+  const label = SOURCE_LABEL[r.listing.source];
+  const m = t();
+  // Hidden like a page title, but the name is the whole question: it's on hover, as a hidden title is.
+  const name = hideTitle ? m.creator.newFileOnPage(label) : file.name;
+  const progress = app.updates[creator.key];
+  const busy = progress !== undefined && progress.stage !== 'done' && progress.stage !== 'error';
+
+  const choose = async (kind: 'update' | 'pack'): Promise<void> => {
+    const done = await app.run(() => api.setFileKind(creator.key, file.name, kind));
+    if (!done) return;
+    toast({
+      // With packs they don't have hidden, a pack isn't listed anywhere: don't say it is.
+      text: kind === 'update' ? m.creator.countedAsUpdate : snapshot.settings.showNewPacks ? m.creator.listedAsPack : m.creator.notCountedAsUpdate,
+      action: { label: m.common.undo, run: () => void app.run(() => api.setFileKind(creator.key, file.name, null)) },
+    });
+    // Straight to the update, as the row's Update button would; after a check, when that's greyed out.
+    if (kind === 'update' && !snapshot.running) onUpdate({ key: creator.key, name: creator.name });
+  };
+
+  const notInterested = async (): Promise<void> => {
+    const done = await app.run(() => api.setFileIgnored(creator.key, file.name, true));
+    if (!done) return;
+    toast({
+      text: m.creator.wontMention(hideTitle ? m.creator.thatFile : shortTitle(file.name, 40)),
+      action: { label: m.common.undo, run: () => void app.run(() => api.setFileIgnored(creator.key, file.name, false)) },
+    });
+  };
+
+  return (
+    <div className="source-card new-pack">
+      <span className="site-badge" aria-hidden="true">
+        {SITE_BADGE[r.listing.source]}
+      </span>
+      <div className="source-text">
+        <span className="source-title" title={file.name}>
+          {name}
+        </span>
+        <span className="source-sub faint">{m.creator.posted(formatShortDate(file.updatedAt))}</span>
+      </div>
+      <Button size="sm" onClick={() => void choose('update')} disabled={busy}>
+        {m.creator.itsAnUpdate}
+      </Button>
+      <Button size="sm" variant="quiet" onClick={() => void choose('pack')} disabled={busy}>
+        {m.creator.itsAPack}
+      </Button>
+      <MenuButton
+        label={m.creator.moreFor(name)}
+        items={[
+          { label: m.common.openPage, icon: ExternalLink, onSelect: () => void app.run(() => api.openExternal(r.listing.url)) },
           { label: m.creator.openPrivately, icon: Copy, onSelect: () => void app.run(() => api.showLinkMenu(r.listing.url)) },
           { label: m.creator.notInterested, icon: BellOff, danger: true, onSelect: () => void notInterested() },
         ]}

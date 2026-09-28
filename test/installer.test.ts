@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { extractDownload, isSafeEntryPath, listArchive, parseSevenZipListing, UnsafeArchiveError } from '../src/core/archive.js';
-import { applyInstall, planInstall, scriptDir, undoInstall } from '../src/core/installer.js';
+import { applyInstall, markUnchanged, planInstall, scriptDir, undoInstall } from '../src/core/installer.js';
 import type { LocalFile } from '../src/shared/types.js';
 import { buildZip } from './helpers/zip-builder.js';
 
@@ -128,11 +128,12 @@ describe('archive extraction', () => {
   });
 });
 
+async function localFile(path: string, root: string): Promise<LocalFile> {
+  const st = await stat(path);
+  return { path, root, relPath: relative(root, path), size: st.size, mtimeMs: st.mtimeMs, kind: 'ww-animation', authors: {} };
+}
+
 describe('installer', () => {
-  const localFile = async (path: string, root: string): Promise<LocalFile> => {
-    const st = await stat(path);
-    return { path, root, relPath: relative(root, path), size: st.size, mtimeMs: st.mtimeMs, kind: 'ww-animation', authors: {} };
-  };
 
   it('plans replacements, additions and possibly obsolete files', async () => {
     const mods = join(tmp, 'Mods');
@@ -257,5 +258,100 @@ describe('installer', () => {
       files: [{ source: join(tmp, 'a'), target: join(tmp, 'elsewhere.package'), kind: 'add' as const }],
     };
     await expect(applyInstall({ plan, remove: [], backupRoot: join(tmp, 'b'), modsRoots: [mods], isGameRunning: async () => false })).rejects.toThrow(/outside your Mods/);
+  });
+});
+
+/**
+ * A download holding another version or edition of a file the user has, under its own name: the
+ * shape of a report where "X (Public).package" was installed beside "X_PATREON.package", and both loaded.
+ */
+describe('a new version or edition under another name', () => {
+  const plan = (mods: string, installed: LocalFile[], extracted: string[]) =>
+    planInstall({
+      id: 'p', creatorKey: 'amberlily', name: 'Amberlily', downloadUrl: '', source: 'loverslab', downloads: ['a.zip'],
+      extractedDir: join(tmp, 'x'), extractedFiles: extracted, installedFiles: installed, modsRoots: [mods],
+    });
+
+  it('replaces the old edition in its folder, and undo puts it back', async () => {
+    const mods = join(tmp, 'Mods');
+    await put(join(mods, 'Extras', 'WW_Amberlily_Animations_PATREON.package'), 'patreon build');
+    await put(join(mods, 'Extras', 'WW_Amberlily_Stories_Animations [Public].package'), 'stories');
+    await put(join(tmp, 'x', 'WW_Amberlily_Animations (Public).package'), 'public build');
+    await put(join(tmp, 'x', 'WW_Amberlily_Animations (Legacy).package'), 'legacy');
+    const before = await tree(mods);
+    const installed = [
+      await localFile(join(mods, 'Extras', 'WW_Amberlily_Animations_PATREON.package'), mods),
+      await localFile(join(mods, 'Extras', 'WW_Amberlily_Stories_Animations [Public].package'), mods),
+    ];
+    const p = plan(mods, installed, ['WW_Amberlily_Animations (Public).package', 'WW_Amberlily_Animations (Legacy).package']);
+    expect(p.files.map((f) => [basename(f.target), f.kind, f.replaces && basename(f.replaces)])).toEqual([
+      ['WW_Amberlily_Animations (Public).package', 'replace', 'WW_Amberlily_Animations_PATREON.package'],
+      // Legacy is a pack of its own, not an edition.
+      ['WW_Amberlily_Animations (Legacy).package', 'add', undefined],
+    ]);
+    expect(p.files[0]!.target).toBe(join(mods, 'Extras', 'WW_Amberlily_Animations (Public).package'));
+    // Handled, so not also offered under "Not in this download".
+    expect(p.possiblyObsolete).toEqual([join(mods, 'Extras', 'WW_Amberlily_Stories_Animations [Public].package')]);
+
+    const record = await applyInstall({ plan: p, remove: [], backupRoot: join(tmp, 'backups'), modsRoots: [mods], isGameRunning: async () => false });
+    expect(Object.keys(await tree(mods)).sort()).toEqual(
+      [
+        join('Extras', 'WW_Amberlily_Animations (Legacy).package'),
+        join('Extras', 'WW_Amberlily_Animations (Public).package'),
+        join('Extras', 'WW_Amberlily_Stories_Animations [Public].package'),
+      ].sort(),
+    );
+    await undoInstall(record, { isGameRunning: async () => false });
+    expect(await tree(mods)).toEqual(before);
+  });
+
+  it('replaces the previous version (Pack_v1 by Pack_v2)', async () => {
+    const mods = join(tmp, 'Mods');
+    await put(join(mods, 'WW_Moonberry_Juniper_v1.package'), 'v1');
+    await put(join(tmp, 'x', 'WW_Moonberry_Juniper_v2.package'), 'v2');
+    const p = plan(mods, [await localFile(join(mods, 'WW_Moonberry_Juniper_v1.package'), mods)], ['WW_Moonberry_Juniper_v2.package']);
+    expect(p.files).toMatchObject([{ kind: 'replace', replaces: join(mods, 'WW_Moonberry_Juniper_v1.package') }]);
+  });
+
+  it('adds it when more than one file of theirs could be the one it replaces', async () => {
+    const mods = join(tmp, 'Mods');
+    await put(join(mods, 'a', 'WW_Moonberry_Juniper_v1.package'), 'v1');
+    await put(join(mods, 'b', 'WW_Moonberry_Juniper_PATREON.package'), 'early');
+    await put(join(tmp, 'x', 'WW_Moonberry_Juniper_v2.package'), 'v2');
+    const installed = [await localFile(join(mods, 'a', 'WW_Moonberry_Juniper_v1.package'), mods), await localFile(join(mods, 'b', 'WW_Moonberry_Juniper_PATREON.package'), mods)];
+    const [file] = plan(mods, installed, ['WW_Moonberry_Juniper_v2.package']).files;
+    expect(file?.kind).toBe('add');
+    expect(file?.replaces).toBeUndefined();
+  });
+
+  it('never takes a script for a package', async () => {
+    const mods = join(tmp, 'Mods');
+    await put(join(mods, 'Juniper_PATREON.package'), 'pkg');
+    await put(join(tmp, 'x', 'Juniper (Public).ts4script'), 'script');
+    const p = plan(mods, [await localFile(join(mods, 'Juniper_PATREON.package'), mods)], ['Juniper (Public).ts4script']);
+    expect(p.files).toMatchObject([{ kind: 'add' }]);
+  });
+
+  it('leaves their file alone when the renamed one is the same bytes', async () => {
+    const mods = join(tmp, 'Mods');
+    await put(join(mods, 'Juniper_PATREON.package'), 'same');
+    await put(join(tmp, 'x', 'Juniper (Public).package'), 'same');
+    const p = plan(mods, [await localFile(join(mods, 'Juniper_PATREON.package'), mods)], ['Juniper (Public).package']);
+    await markUnchanged(p);
+    expect(p.upToDate).toBe(true);
+  });
+
+  it("doesn't put a file back where the user moved it from since the last scan", async () => {
+    const mods = join(tmp, 'Mods');
+    await put(join(mods, 'Old', 'Juniper.package'), 'v1');
+    const stale = await localFile(join(mods, 'Old', 'Juniper.package'), mods);
+    // Flattened by hand after the check: the scan still has the old path.
+    await put(join(mods, 'Juniper.package'), 'v1');
+    await rm(join(mods, 'Old'), { recursive: true });
+    await put(join(tmp, 'x', 'Juniper.package'), 'v2');
+    // Last, where a lookup by name would keep it.
+    const p = plan(mods, [await localFile(join(mods, 'Juniper.package'), mods), stale], ['Juniper.package']);
+    expect(p.files).toMatchObject([{ kind: 'replace', target: join(mods, 'Juniper.package') }]);
+    expect(p.possiblyObsolete).toEqual([]);
   });
 });

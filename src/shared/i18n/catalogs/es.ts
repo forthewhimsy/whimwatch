@@ -215,6 +215,22 @@ export const es = {
       n === 1
         ? 'Nada en tus carpetas coincide con esta página. No cuenta como actualización.'
         : 'Nada en tus carpetas coincide con estas páginas. No cuentan como actualizaciones.',
+    maybeTag: (n: number) => plural(n, { one: '# puede ser una actualización', other: '# pueden ser actualizaciones' }),
+    mightBeUpdates: (n: number) => (n === 1 ? 'Puede ser una actualización' : 'Pueden ser actualizaciones'),
+    maybeHint: (n: number) =>
+      n === 1
+        ? 'Publicado después de tus archivos, en una página con tu pack. ¿Es una actualización o un pack aparte?'
+        : 'Publicados después de tus archivos, en una página con tu pack. ¿Cada uno es una actualización o un pack aparte?',
+    itsAnUpdate: 'Es una actualización',
+    answers: (n: number) => plural(n, { one: 'Tu respuesta sobre # archivo', other: 'Tus respuestas sobre # archivos' }),
+    saidUpdate: 'Dijiste: una actualización',
+    saidPack: 'Dijiste: un pack aparte',
+    askAgain: 'Volver a preguntar',
+    willAskAgain: 'WhimWatch volverá a preguntar',
+    itsAPack: 'Es un pack aparte',
+    countedAsUpdate: 'Contado como actualización',
+    listedAsPack: 'Listado como pack nuevo',
+    notCountedAsUpdate: 'No se cuenta como actualización',
     newOnPages: (n: number) => (n === 1 ? 'Novedad en una de sus páginas' : 'Novedades en sus páginas'),
     filesAdded: (n: number) =>
       n === 1
@@ -703,6 +719,7 @@ export const es = {
     tickedInstalled: 'Se instalarán los archivos marcados',
     replacesYours: (n: number) => `Sustituye archivos que tienes · ${count(n)}`,
     newFiles: (n: number) => `Archivos nuevos que aún no están en tu carpeta Mods · ${count(n)}`,
+    inPlaceOf: (name: string) => `En lugar de ${name}`,
     yours: (date: string) => `Tu copia: ${date}`,
     notInDownload: 'No están en esta descarga',
     notInDownloadHint: 'Puede ser una versión anterior, o un extra que conseguiste en otro sitio. Márcalo para quitarlo (también se hace una copia de seguridad).',
@@ -723,7 +740,7 @@ export const es = {
   updateAll: {
     title: 'Actualizar todo',
     intro:
-      'Cada pack viene de la fuente más reciente desde la que puedes descargar. Antes se hace una copia de seguridad de tus archivos actuales, y no se quita nada.',
+      'Cada pack viene de la fuente más reciente desde la que puedes descargar. Antes se hace una copia de seguridad de tus archivos actuales.',
     updateN: (n: number) => `Actualizar ${count(n)}`,
     willUpdate: (n: number) => `Se actualizarán · ${count(n)}`,
     selectNone: 'No seleccionar ninguno',
@@ -813,6 +830,8 @@ Tu carpeta Mods no cambia. Como cualquier archivo borrado, estos datos podrían 
       n === 1 ? 'Actualización disponible' : plural(n, { one: '# actualización disponible', other: '# actualizaciones disponibles' }),
     notifyMore: (n: number) => `+${count(n)} más`,
     notifyOpen: 'Abre WhimWatch para ver qué cambió.',
+    notifyMaybeTitle: (n: number) => plural(n, { one: 'Puede ser una actualización', other: '# pueden ser actualizaciones' }),
+    notifyMaybeName: (name: string) => `${name} (puede ser una actualización)`,
     wslBrowser: 'No se pudo abrir tu navegador desde WSL. Instala wslu (incluye wslview), o usa Copiar enlace.',
     wslExplorer: 'No se pudo abrir el Explorador de archivos de Windows desde WSL.',
     signInTitle: (site: string) => `Iniciar sesión en ${site}`,

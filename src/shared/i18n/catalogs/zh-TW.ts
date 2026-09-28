@@ -211,6 +211,22 @@ export const zhTW = {
     packsYouDontHave: '您尚未擁有的動畫包',
     nothingMatches: (n: number) =>
       n === 1 ? '您的資料夾中沒有符合此頁面的內容。不計入更新。' : '您的資料夾中沒有符合這些頁面的內容。不計入更新。',
+    maybeTag: (n: number) => plural(n, { other: '# 個可能是更新' }),
+    mightBeUpdates: (_n: number) => '可能是更新',
+    maybeHint: (n: number) =>
+      n === 1
+        ? '在您的檔案之後發布，位於有您動畫包的頁面上。這是更新，還是另一個動畫包？'
+        : '在您的檔案之後發布，位於有您動畫包的頁面上。每一個是更新，還是另一個動畫包？',
+    itsAnUpdate: '這是更新',
+    answers: (n: number) => plural(n, { other: '您對 # 個檔案的回答' }),
+    saidUpdate: '您的回答：更新',
+    saidPack: '您的回答：另一個動畫包',
+    askAgain: '重新詢問',
+    willAskAgain: 'WhimWatch 會再次詢問',
+    itsAPack: '這是另一個動畫包',
+    countedAsUpdate: '已視為更新',
+    listedAsPack: '已列為新動畫包',
+    notCountedAsUpdate: '不視為更新',
     newOnPages: (n: number) => (n === 1 ? '創作者的某個頁面有新內容' : '創作者的多個頁面有新內容'),
     filesAdded: (n: number) =>
       n === 1
@@ -669,6 +685,7 @@ export const zhTW = {
     tickedInstalled: '已勾選的檔案將會安裝',
     replacesYours: (n: number) => `取代您已有的檔案 · ${count(n)}`,
     newFiles: (n: number) => `尚未在您 Mods 資料夾中的新檔案 · ${count(n)}`,
+    inPlaceOf: (name: string) => `取代 ${name}`,
     yours: (date: string) => `您的檔案：${date}`,
     notInDownload: '不在此次下載中',
     notInDownloadHint: '可能是舊版本，或是您從其他地方取得的額外檔案。勾選即可移除（同樣會先備份）。',
@@ -688,7 +705,7 @@ export const zhTW = {
 
   updateAll: {
     title: '全部更新',
-    intro: '每個動畫包都會從您可下載的最新來源取得。您目前的檔案會先備份，且不會移除任何檔案。',
+    intro: '每個動畫包都會從您可下載的最新來源取得。您目前的檔案會先備份。',
     updateN: (n: number) => `更新 ${count(n)} 個`,
     willUpdate: (n: number) => `將會更新 · ${count(n)}`,
     selectNone: '全部不選',
@@ -771,6 +788,8 @@ export const zhTW = {
     notifyTitle: (n: number) => (n === 1 ? '有可用更新' : plural(n, { other: '有 # 個可用更新' })),
     notifyMore: (n: number) => `還有 ${count(n)} 個`,
     notifyOpen: '開啟 WhimWatch 查看變更內容。',
+    notifyMaybeTitle: (n: number) => plural(n, { other: '# 個可能是更新' }),
+    notifyMaybeName: (name: string) => `${name}（可能是更新）`,
     wslBrowser: '無法從 WSL 開啟您的瀏覽器。請安裝 wslu（它提供 wslview），或使用「複製連結」。',
     wslExplorer: '無法從 WSL 啟動 Windows 檔案總管。',
     signInTitle: (site: string) => `登入 ${site}`,

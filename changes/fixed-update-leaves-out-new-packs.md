@@ -1,0 +1,1 @@
+- An update no longer brings new packs posted on its page since your last update. Only files posted together with the update come with it; the others stay under "New on a page of theirs" for you to get or not.

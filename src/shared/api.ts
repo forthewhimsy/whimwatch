@@ -4,6 +4,8 @@ import type {
   CheckProgress,
   CheckResult,
   CreatorResult,
+  FileAnswer,
+  FileKind,
   InstallRecord,
   SeenEvent,
   UpdateSite,
@@ -91,6 +93,8 @@ export interface AppSnapshot {
   creatorMutedSources: Record<string, UpdateSite[]>;
   /** Creator key → new files on their pages the user isn't interested in, by lower-case name. */
   ignoredFiles: Record<string, string[]>;
+  /** What the user said archives on each creator's pages are, by creator key: listed so each can be taken back. */
+  fileAnswers?: Record<string, FileAnswer[]>;
   browsers: LinkBrowser[];
   /** Folder that holds a backup subfolder for each update. */
   backupRoot: string;
@@ -131,6 +135,11 @@ export interface PlannedFile {
   unchanged?: boolean;
   /** For a replacement: the date of the user's copy, shown beside it so the two can be compared. */
   installedAt?: number;
+  /**
+   * For a replacement under a new name (another version or edition of the file, see sameFile): the
+   * user's file it takes the place of, removed (and backed up) when this one is installed.
+   */
+  replaces?: string;
 }
 
 export interface UpdatePlan {
@@ -249,6 +258,8 @@ export interface WhimWatchApi {
   setCreatorSite(key: string, site: UpdateSite, on: boolean): Promise<AppSnapshot>;
   /** "Not interested" in a new file on one of the creator's pages (RemoteInfo.newFiles), or its undo. */
   setFileIgnored(key: string, name: string, ignored: boolean): Promise<AppSnapshot>;
+  /** What an archive on one of the creator's pages is (NewFileInfo.kind), or null to be asked again. */
+  setFileKind(key: string, name: string, kind: FileKind | null): Promise<AppSnapshot>;
   openExternal(url: string): Promise<void>;
   /** Native context menu for a link: open, open privately, copy. */
   showLinkMenu(url: string): Promise<void>;
@@ -324,6 +335,7 @@ export const API_METHODS = [
   'unrejectLink',
   'setCreatorSite',
   'setFileIgnored',
+  'setFileKind',
   'openExternal',
   'showLinkMenu',
   'openBackupFolder',

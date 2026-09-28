@@ -1644,8 +1644,14 @@ button.chip {
   color: var(--coral);
 }
 
-.file-line-name {
+.file-line-names {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.file-line-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

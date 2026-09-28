@@ -144,7 +144,13 @@ export interface RemoteInfo {
    * the page looked newer than your files. Usually a new pack put on the same page, which moved the
    * page's date without touching yours; see core/pack-files.ts.
    */
-  newFiles?: { name: string; updatedAt?: number }[];
+  newFiles?: NewFileInfo[];
+  /**
+   * LoversLab: the page's date by its files alone, before any archive the user called an update
+   * (NewFileInfo.kind) moved it. Kept so that choice can be taken back without another check. Only
+   * set when an archive is among newFiles.
+   */
+  filesAt?: number;
   /**
    * LoversLab: files posted with (or before) the user's current file that they don't have: variants
    * they left out, such as a no-sound edition. Only set while their pack on the page is current, so
@@ -155,6 +161,32 @@ export interface RemoteInfo {
   problem?: RemoteProblem;
   /** The same, in English words: for the report and diagnostics, and results saved before `problem`. */
   error?: string;
+}
+
+/** A file on a page of theirs that they don't have, newer than theirs: see RemoteInfo.newFiles. */
+export interface NewFileInfo {
+  name: string;
+  updatedAt?: number;
+  /**
+   * A zip, rar or 7z: what's inside can't be known without downloading it, so whether it is an update
+   * of theirs or a pack of its own is the user's call (`kind`), asked rather than guessed.
+   */
+  archive?: true;
+  /** What the user said an archive is. Unset: not yet asked, so neither an update nor a new pack. */
+  kind?: FileKind;
+  /**
+   * An older version of another file here (V6 beside V7): not offered on its own, but kept, so an
+   * update from the page leaves it out as it does the newer one.
+   */
+  superseded?: true;
+}
+
+export type FileKind = 'update' | 'pack';
+
+/** What the user said an archive is, with the name it was asked under, so the answer can be listed and taken back. */
+export interface FileAnswer {
+  kind: FileKind;
+  name: string;
 }
 
 export type CreatorStatus =
@@ -259,6 +291,17 @@ export interface InstallRecord {
    * only thing that links such a file to a specific pack rather than just to a creator.
    */
   listingUrl?: string;
+  /**
+   * Archives from the page's list of files this install downloaded: lower-case name → the upload
+   * date the list gave it, or when it was installed where the list didn't say. Remembered as the
+   * user's (CreatorLinkPrefs.gotFiles) until the install is undone.
+   */
+  gotFiles?: Record<string, number>;
+  /**
+   * The mod files this install put in place, by lower-case name → the upload date the page's list
+   * gave each, or undefined where no list named it (see CreatorLinkPrefs.uploadedAt).
+   */
+  uploadedAt?: Record<string, number | null>;
   undoneAt?: number;
   /** The backup was deleted (expired or cleared), so the update can't be undone. */
   backupDeletedAt?: number;

@@ -214,6 +214,22 @@ export const it = {
       n === 1
         ? 'Niente nelle tue cartelle corrisponde a questa pagina. Non conta come aggiornamento.'
         : 'Niente nelle tue cartelle corrisponde a queste pagine. Non contano come aggiornamenti.',
+    maybeTag: (n: number) => plural(n, { one: '# potrebbe essere un aggiornamento', other: '# potrebbero essere aggiornamenti' }),
+    mightBeUpdates: (n: number) => (n === 1 ? 'Potrebbe essere un aggiornamento' : 'Potrebbero essere aggiornamenti'),
+    maybeHint: (n: number) =>
+      n === 1
+        ? 'Pubblicato dopo i tuoi file, su una pagina con il tuo pacchetto. È un aggiornamento o un pacchetto a sé?'
+        : 'Pubblicati dopo i tuoi file, su una pagina con il tuo pacchetto. Ognuno è un aggiornamento o un pacchetto a sé?',
+    itsAnUpdate: 'È un aggiornamento',
+    answers: (n: number) => plural(n, { one: 'La tua risposta su # file', other: 'Le tue risposte su # file' }),
+    saidUpdate: 'Hai detto: un aggiornamento',
+    saidPack: 'Hai detto: un pacchetto a sé',
+    askAgain: 'Chiedi di nuovo',
+    willAskAgain: 'WhimWatch lo chiederà di nuovo',
+    itsAPack: 'È un pacchetto a sé',
+    countedAsUpdate: 'Contato come aggiornamento',
+    listedAsPack: 'Elencato come nuovo pacchetto',
+    notCountedAsUpdate: 'Non contato come aggiornamento',
     newOnPages: (n: number) => (n === 1 ? 'Novità su una sua pagina' : 'Novità sulle sue pagine'),
     filesAdded: (n: number) =>
       n === 1
@@ -701,6 +717,7 @@ export const it = {
     tickedInstalled: 'I file selezionati verranno installati',
     replacesYours: (n: number) => `Sostituisce file che hai · ${count(n)}`,
     newFiles: (n: number) => `File nuovi non ancora nella tua cartella Mods · ${count(n)}`,
+    inPlaceOf: (name: string) => `Al posto di ${name}`,
     yours: (date: string) => `La tua copia: ${date}`,
     notInDownload: 'Non presenti in questo download',
     notInDownloadHint:
@@ -723,7 +740,7 @@ export const it = {
   updateAll: {
     title: 'Aggiorna tutti',
     intro:
-      'Ogni pacchetto arriva dalla fonte più recente da cui puoi scaricare. Prima viene fatto il backup dei tuoi file attuali, e niente viene rimosso.',
+      'Ogni pacchetto arriva dalla fonte più recente da cui puoi scaricare. Prima viene fatto il backup dei tuoi file attuali.',
     updateN: (n: number) => `Aggiorna ${count(n)}`,
     willUpdate: (n: number) => `Da aggiornare · ${count(n)}`,
     selectNone: 'Deseleziona tutti',
@@ -812,6 +829,8 @@ La tua cartella Mods non viene modificata. Come ogni file eliminato, questi dati
     notifyTitle: (n: number) => (n === 1 ? 'Aggiornamento disponibile' : plural(n, { one: '# aggiornamento disponibile', other: '# aggiornamenti disponibili' })),
     notifyMore: (n: number) => `+${count(n)} altri`,
     notifyOpen: 'Apri WhimWatch per vedere cosa è cambiato.',
+    notifyMaybeTitle: (n: number) => plural(n, { one: 'Potrebbe essere un aggiornamento', other: '# potrebbero essere aggiornamenti' }),
+    notifyMaybeName: (name: string) => `${name} (potrebbe essere un aggiornamento)`,
     wslBrowser: 'Impossibile aprire il browser da WSL. Installa wslu (fornisce wslview), oppure usa Copia link.',
     wslExplorer: 'Impossibile avviare Esplora file di Windows da WSL.',
     signInTitle: (site: string) => `Accedi a ${site}`,

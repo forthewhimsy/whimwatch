@@ -440,6 +440,7 @@ export function UpdateDialog({ target, app, onClose }: { target: UpdateTarget; a
                         key={f.target}
                         kind={f.kind}
                         path={f.target}
+                        replaces={f.replaces}
                         checked={!skip.includes(f.target)}
                         onToggle={() => setSkip(toggle(skip, f.target))}
                         note={
@@ -510,7 +511,22 @@ const KIND = {
   remove: { icon: Minus, off: 'keep' },
 } as const;
 
-function FileLine({ kind, path, checked, onToggle, note }: { kind: keyof typeof KIND; path: string; checked: boolean; onToggle: () => void; note?: string }) {
+function FileLine({
+  kind,
+  path,
+  replaces,
+  checked,
+  onToggle,
+  note,
+}: {
+  kind: keyof typeof KIND;
+  path: string;
+  /** A file of theirs under another name that this one takes the place of. */
+  replaces?: string;
+  checked: boolean;
+  onToggle: () => void;
+  note?: string;
+}) {
   const { icon: KindIcon } = KIND[kind];
   const label = t().update.kind[kind];
   const off = t().update.kind[KIND[kind].off];
@@ -520,8 +536,15 @@ function FileLine({ kind, path, checked, onToggle, note }: { kind: keyof typeof 
       <span className="kind-icon" aria-hidden="true">
         <KindIcon size={14} />
       </span>
-      <span className="mono file-line-name" title={path}>
-        {fileName(path)}
+      <span className="file-line-names">
+        <span className="mono file-line-name" title={path}>
+          {fileName(path)}
+        </span>
+        {replaces && (
+          <span className="faint small file-line-name" title={replaces}>
+            {t().update.inPlaceOf(fileName(replaces))}
+          </span>
+        )}
       </span>
       {note && <span className="faint small file-line-note">{note}</span>}
       <span className="kind-label">{checked ? label : off}</span>

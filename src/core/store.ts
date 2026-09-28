@@ -16,6 +16,11 @@ export interface AppState {
   dismissed: Record<string, number>;
   /** Creator key → remote date an OS notification was already shown for. */
   notified: Record<string, number>;
+  /**
+   * Creator key → upload date of the newest archive on their pages a notification already asked
+   * about ("Might be an update"): announced once, as a question, never as an update.
+   */
+  notifiedMaybe?: Record<string, number>;
   discovery: DiscoveryCache;
   lastResult?: CheckResult;
   installs: InstallRecord[];

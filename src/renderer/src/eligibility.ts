@@ -56,12 +56,29 @@ export interface NewFile {
 
 /**
  * New files on pages that also hold a pack of theirs, leaving out the ones they said no to. Shown
- * with packs they don't have, and under the same setting: it's the same thing, one page along.
+ * with packs they don't have, and under the same setting: it's the same thing, one page along. An
+ * archive only once the user has said it's a pack of its own (see maybeUpdatesFor).
  */
 export function newFilesFor(c: CreatorResult, snapshot: AppSnapshot): NewFile[] {
   if (!snapshot.settings.showNewPacks) return [];
   const ignored = new Set(snapshot.ignoredFiles?.[c.key] ?? []);
-  return c.remotes.flatMap((remote) => (remote.newFiles ?? []).filter((f) => !ignored.has(f.name.toLowerCase())).map((f) => ({ remote, ...f })));
+  return c.remotes.flatMap((remote) =>
+    (remote.newFiles ?? [])
+      .filter((f) => !f.superseded && (!f.archive || f.kind === 'pack') && !ignored.has(f.name.toLowerCase()))
+      .map((f) => ({ remote, ...f })),
+  );
+}
+
+/**
+ * Archives on pages that hold a pack of theirs, newer than their files, that the user hasn't said
+ * are updates or packs of their own: only they can tell, from the name. Not under the new-packs
+ * setting, since each may well be an update, and hiding one could hide an update.
+ */
+export function maybeUpdatesFor(c: CreatorResult, snapshot: AppSnapshot): NewFile[] {
+  const ignored = new Set(snapshot.ignoredFiles?.[c.key] ?? []);
+  return c.remotes.flatMap((remote) =>
+    (remote.newFiles ?? []).filter((f) => f.archive && !f.kind && !f.superseded && !ignored.has(f.name.toLowerCase())).map((f) => ({ remote, ...f })),
+  );
 }
 
 /**

@@ -218,6 +218,23 @@ export const en = {
     packsYouDontHave: "Packs you don't have",
     nothingMatches: (n: number) =>
       n === 1 ? 'Nothing in your folders matches this page. Not counted as updates.' : 'Nothing in your folders matches these pages. Not counted as updates.',
+    maybeTag: (n: number) => plural(n, { one: '# might be an update', other: '# might be updates' }),
+    mightBeUpdates: (n: number) => (n === 1 ? 'Might be an update' : 'Might be updates'),
+    maybeHint: (n: number) =>
+      n === 1
+        ? 'Posted after your files, on a page with your pack. Is it an update, or a pack of its own?'
+        : 'Posted after your files, on a page with your pack. Is each an update, or a pack of its own?',
+    itsAnUpdate: "It's an update",
+    answers: (n: number) => plural(n, { one: 'Your answer about # file', other: 'Your answers about # files' }),
+    saidUpdate: 'You said: an update',
+    saidPack: 'You said: a separate pack',
+    askAgain: 'Ask again',
+    willAskAgain: 'WhimWatch will ask again',
+    itsAPack: "It's a separate pack",
+    countedAsUpdate: 'Counted as an update',
+    listedAsPack: 'Listed as a new pack',
+    /** After "It's a separate pack" with packs you don't have hidden: it isn't listed anywhere. */
+    notCountedAsUpdate: 'Not counted as an update',
     newOnPages: (n: number) => (n === 1 ? 'New on a page of theirs' : 'New on pages of theirs'),
     filesAdded: (n: number) =>
       n === 1
@@ -700,6 +717,8 @@ export const en = {
     /** Not "newer versions": the page picked in the Update window can be older than the user's copy. */
     replacesYours: (n: number) => `Replaces files you have · ${count(n)}`,
     newFiles: (n: number) => `New files not in your Mods folder yet · ${count(n)}`,
+    /** Under a file that replaces one of theirs with another name (a new version or edition). */
+    inPlaceOf: (name: string) => `In place of ${name}`,
     /** The date of the user's copy, beside the file that replaces it. */
     yours: (date: string) => `Yours: ${date}`,
     notInDownload: 'Not in this download',
@@ -721,7 +740,7 @@ export const en = {
 
   updateAll: {
     title: 'Update all',
-    intro: 'Each pack comes from the newest source you can download from. Your current files are backed up first, and nothing is removed.',
+    intro: 'Each pack comes from the newest source you can download from. Your current files are backed up first.',
     updateN: (n: number) => `Update ${count(n)}`,
     willUpdate: (n: number) => `Will update · ${count(n)}`,
     selectNone: 'Select none',
@@ -806,6 +825,8 @@ Your Mods folder is not changed. Like any deleted file, these may be recoverable
     notifyTitle: (n: number) => (n === 1 ? 'Update available' : plural(n, { one: '# update available', other: '# updates available' })),
     notifyMore: (n: number) => `+${count(n)} more`,
     notifyOpen: 'Open WhimWatch to see what changed.',
+    notifyMaybeTitle: (n: number) => plural(n, { one: 'Might be an update', other: '# might be updates' }),
+    notifyMaybeName: (name: string) => `${name} (might be an update)`,
     wslBrowser: "Couldn't open your browser from WSL. Install wslu (it provides wslview), or use Copy link.",
     wslExplorer: "Couldn't start Windows Explorer from WSL.",
     signInTitle: (site: string) => `Sign in to ${site}`,

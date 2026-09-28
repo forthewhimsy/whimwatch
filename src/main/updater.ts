@@ -48,7 +48,11 @@ interface PlanOptions {
 }
 
 export class Updater {
-  private plans = new Map<string, { plan: UpdatePlan; workDir: string }>();
+  /**
+   * Prepared updates, with the upload dates the page's list gave its files (lower-case names), so an
+   * archive installed from it is remembered as of its upload rather than of the install.
+   */
+  private plans = new Map<string, { plan: UpdatePlan; workDir: string; uploaded?: Record<string, number> }>();
   /** Preparation in progress; asking again for the same update reuses it. */
   private preparing = new Map<string, Promise<UpdatePlan>>();
   private busy = false;
@@ -239,6 +243,7 @@ export class Updater {
     const workDir = join(this.tempRoot, randomUUID());
     const pool = this.controller.pool;
     try {
+      await this.controller.refreshLocalFiles();
       const target = this.target(key);
       // Offers found while comparing sources are reused, so the site isn't asked twice.
       const offers = new Map<string, Offer>();
@@ -278,6 +283,10 @@ export class Updater {
       // long download that only shows the files were the same.
       let current: string[] = [];
       let offer: Offer | undefined;
+      // A new file's date is on the page already; any other file's is on the list, where it's read.
+      const uploaded: Record<string, number> = Object.fromEntries(
+        (remote.newFiles ?? []).flatMap((f) => (f.updatedAt !== undefined ? [[f.name.toLowerCase(), f.updatedAt]] : [])),
+      );
       if (opts.onlyFile) {
         offer = await resolveOffer(remote, pool, { probe: true, only: opts.onlyFile, signal: abort.signal });
       } else if (remote.listing.source === 'loverslab' && !opts.ignoreDates) {
@@ -286,7 +295,8 @@ export class Updater {
         // loading the page again. Should the button lead to a list, the download leaves `except` out.
         if (!listed && button) offer = { button };
         if (listed) {
-          current = currentByDate(listed, target.files, this.controller.installedFiles());
+          for (const f of listed) if (f.name && f.updatedAt !== undefined) uploaded[f.name.toLowerCase()] = f.updatedAt;
+          current = currentByDate(listed, target.files, this.controller.installedFiles(), this.controller.currentState.linkPrefs[String(key)]?.gotFiles);
           let wanted: string[];
           try {
             wanted = chooserDownloads(listed, undefined, [...except, ...current]);
@@ -378,7 +388,7 @@ export class Updater {
       const unticked = startUnticked(plan.files, skipped, this.controller.installedFiles());
       if (unticked.length) plan.startUnticked = unticked;
       if (await isGameRunning()) plan.gameRunning = true;
-      this.plans.set(plan.id, { plan, workDir });
+      this.plans.set(plan.id, { plan, workDir, uploaded });
       progress('done', plan.upToDate ? t().updater.upToDateWith(label) : t().updater.readyFrom(label));
       return plan;
     } catch (err) {
@@ -391,8 +401,8 @@ export class Updater {
     }
   }
 
-  private async install(entry: { plan: UpdatePlan; workDir: string }, choice: UpdateChoice, meta: InstallMeta): Promise<AppSnapshot> {
-    const { plan, workDir } = entry;
+  private async install(entry: { plan: UpdatePlan; workDir: string; uploaded?: Record<string, number> }, choice: UpdateChoice, meta: InstallMeta): Promise<AppSnapshot> {
+    const { plan, workDir, uploaded } = entry;
     const progress = this.progressFor(plan.creatorKey);
     progress('installing', t().updater.installingEllipsis);
     try {
@@ -415,6 +425,13 @@ export class Updater {
       );
       const newPack = this.isNewPackPage(plan);
       progress('done', newPack ? t().updater.added(plan.name) : t().updater.updated(plan.name));
+      // A LoversLab archive has no file of its name in the Mods folder to say the user has it now. It's
+      // theirs as of the upload the list dated, where it did; failing that, as of now.
+      const got = plan.source === 'loverslab' ? plan.downloads.filter((d) => ARCHIVE_FILE.test(d)).map((d) => d.toLowerCase()) : [];
+      const gotFiles = Object.fromEntries(got.map((name) => [name, uploaded?.[name] ?? record.at]));
+      // Each mod file put in place, with its upload date where the list named it by that name.
+      const placed = plan.files.filter((f) => !f.unchanged && !choice.skip.includes(f.target)).map((f) => basename(f.target).toLowerCase());
+      const uploadedAt = Object.fromEntries(placed.map((name) => [name, uploaded?.[name] ?? null]));
       return await this.controller.recordInstall({
         ...record,
         source: plan.source,
@@ -422,6 +439,8 @@ export class Updater {
         batchId: meta.batchId,
         automatic: meta.automatic || undefined,
         newPack: newPack || undefined,
+        ...(got.length && { gotFiles }),
+        ...(placed.length && { uploadedAt }),
       });
     } catch (err) {
       progress('error', (err as Error).message);

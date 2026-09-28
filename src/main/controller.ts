@@ -23,7 +23,7 @@ import { isNewer, outdatedRemotes, seenMark } from '../core/compare.js';
 import { groupByCreator } from '../core/creators.js';
 import { datePacks } from '../core/ownership.js';
 import { removeLink, restoreLink, unreadLinks } from '../core/link-prefs.js';
-import { dropInstalledFiles, updateSkipped } from '../core/pack-files.js';
+import { dropInstalledFiles, fileKindKey, updateSkipped } from '../core/pack-files.js';
 import { BUNDLED_OVERRIDES, loadOverrides, type Overrides } from '../core/overrides.js';
 import { filesFromCache, rescanPaths, type ScanCache, scanDirs } from '../core/scanner.js';
 import { classifyUrl, linkKey, linkProblem, normalizeUserUrl } from '../core/sources/urls.js';
@@ -47,6 +47,8 @@ import {
   type CheckResult,
   type CreatorResult,
   type CreatorStatus,
+  type FileAnswer,
+  type FileKind,
   type InstallRecord,
   type LocalFile,
   type RemoteInfo,
@@ -283,6 +285,7 @@ export class AppController {
       rejectedLinks: Object.fromEntries(Object.entries(s.linkPrefs).map(([k, v]) => [k, v.rejected])),
       creatorMutedSources: Object.fromEntries(Object.entries(s.linkPrefs).flatMap(([k, v]) => (v.mutedSources?.length ? [[k, v.mutedSources]] : []))),
       ignoredFiles: Object.fromEntries(Object.entries(s.linkPrefs).flatMap(([k, v]) => (v.ignoredFiles?.length ? [[k, v.ignoredFiles]] : []))),
+      fileAnswers: Object.fromEntries(Object.entries(s.linkPrefs).flatMap(([k, v]) => (v.fileKinds ? [[k, Object.values(v.fileKinds)]] : []))),
       browsers: (await installedBrowsers()).map(({ id, name, privateMode, isDefault }) => ({ id, name, privateMode, isDefault })),
       backupRoot: this.backupRoot,
       batch: this.batch,
@@ -449,6 +452,20 @@ export class AppController {
 
   async recordInstall(record: InstallRecord): Promise<AppSnapshot> {
     this.state.installs = [...this.state.installs, record].slice(-50);
+    if (record.uploadedAt) {
+      const prefs = this.prefs(record.creatorKey);
+      const next = Object.entries(prefs.uploadedAt ?? {}).filter(([name]) => !(name in record.uploadedAt!));
+      const known = Object.entries(record.uploadedAt).flatMap(([name, upload]) => (upload === null ? [] : [[name, { upload, installed: record.at }] as const]));
+      const all = [...next, ...known].slice(-500);
+      if (all.length) prefs.uploadedAt = Object.fromEntries(all);
+      else delete prefs.uploadedAt;
+    }
+    if (record.gotFiles && Object.keys(record.gotFiles).length) {
+      const prefs = this.prefs(record.creatorKey);
+      // Newest last, so the cap keeps the most recent; one installed again moves to the end.
+      const kept = Object.entries(prefs.gotFiles ?? {}).filter(([name]) => record.gotFiles![name] === undefined);
+      prefs.gotFiles = Object.fromEntries([...kept, ...Object.entries(record.gotFiles)].slice(-200));
+    }
     await this.rescanLocal(record.operations.map((o) => o.target));
     await this.pruneBackups();
     return this.commit();
@@ -481,6 +498,20 @@ export class AppController {
 
   async replaceInstall(record: InstallRecord): Promise<AppSnapshot> {
     this.state.installs = this.state.installs.map((i) => (i.id === record.id ? record : i));
+    // Undone: the files put back are the ones from before, whose upload dates weren't kept.
+    if (record.undoneAt && record.uploadedAt) {
+      const prefs = this.prefs(record.creatorKey);
+      const left = Object.entries(prefs.uploadedAt ?? {}).filter(([name]) => !(name in record.uploadedAt!));
+      if (left.length) prefs.uploadedAt = Object.fromEntries(left);
+      else delete prefs.uploadedAt;
+    }
+    // Undone: the archive isn't theirs any more, and is offered again at the next check.
+    if (record.undoneAt && record.gotFiles) {
+      const prefs = this.prefs(record.creatorKey);
+      const got = Object.entries(prefs.gotFiles ?? {}).filter(([name]) => record.gotFiles![name] === undefined);
+      if (got.length) prefs.gotFiles = Object.fromEntries(got);
+      else delete prefs.gotFiles;
+    }
     await this.rescanLocal(record.operations.map((o) => o.target));
     return this.commit();
   }
@@ -489,12 +520,12 @@ export class AppController {
    * Re-reads local files after an install or undo, keeping the last remote
    * results. Only the changed paths are looked at when the cache allows it.
    */
-  private async rescanLocal(changedPaths: string[]): Promise<void> {
+  private async rescanLocal(changedPaths: string[] | 'all'): Promise<void> {
     const result = this.state.lastResult;
     if (!result) return;
     let files: LocalFile[];
     const cached = filesFromCache(this.scanCache);
-    if (cached) {
+    if (cached && changedPaths !== 'all') {
       this.scanCache = await rescanPaths(changedPaths, this.state.dirs, this.scanCache);
       files = filesFromCache(this.scanCache) ?? cached;
     } else {
@@ -515,11 +546,29 @@ export class AppController {
     }
     // A new file installed with Get it can end up under another creator (its tuning names another
     // author), so it's looked for among all the files, not just this creator's.
-    for (const creator of result.creators) creator.remotes = creator.remotes.map((r) => dropInstalledFiles(r, files));
+    for (const creator of result.creators) {
+      const got = Object.keys(this.state.linkPrefs[creator.key]?.gotFiles ?? {});
+      creator.remotes = creator.remotes.map((r) => dropInstalledFiles(r, files, got));
+    }
     const core = coreResult(files, undefined, result.core.error, this.state.dismissed[CORE_KEY]);
     Object.assign(result.core, { installed: core.installed, installedFiles: core.installedFiles });
     this.refreshStatuses();
   }
+
+  /**
+   * Walks the Mods folders again before an update is planned, so it goes where the user's files are
+   * now: planned against the last check, files moved or deleted since were replaced at their old
+   * paths, next to the moved originals. Unchanged files are only looked at, not read. Not again
+   * within a few seconds, so Update all walks the folders once rather than once per creator.
+   */
+  async refreshLocalFiles(): Promise<void> {
+    if (Date.now() - this.lastWalk < 15_000) return;
+    await this.rescanLocal('all');
+    this.lastWalk = Date.now();
+    await this.commit();
+  }
+
+  private lastWalk = 0;
 
   /**
    * Bug-report details: versions, settings, last check summary and the end of
@@ -713,6 +762,26 @@ export class AppController {
     return this.commit();
   }
 
+  /**
+   * Says what an archive on a creator's pages is: an update of theirs, which dates its page (Update
+   * ready), or a pack of its own, offered with Get it. Null asks again. Applied now, not at the next check.
+   */
+  async setFileKind(key: unknown, name: unknown, kind: unknown): Promise<AppSnapshot> {
+    const file = str(name).trim();
+    if (!file || file.length > 255) throw translatedError((m) => m.main.invalidFileName);
+    if (kind !== null && kind !== 'update' && kind !== 'pack') throw new Error('Invalid file kind');
+    const choice = kind as FileKind | null;
+    const prefs = this.prefs(str(key));
+    const { [fileKindKey(file)]: _was, ...rest } = prefs.fileKinds ?? {};
+    const next: Record<string, FileAnswer> = choice === null ? rest : { ...rest, [fileKindKey(file)]: { kind: choice, name: file } };
+    // Kept short, oldest first out, like the other per-file lists.
+    const entries = Object.entries(next).slice(-200);
+    if (entries.length) prefs.fileKinds = Object.fromEntries(entries);
+    else delete prefs.fileKinds;
+    this.refreshStatuses();
+    return this.commit();
+  }
+
   private creatorMutedSources(): Record<string, UpdateSite[] | undefined> {
     return Object.fromEntries(Object.entries(this.state.linkPrefs).map(([k, v]) => [k, v.mutedSources]));
   }
@@ -742,6 +811,8 @@ export class AppController {
       creatorMuted: prefs?.mutedSources ?? [],
       seen: prefs?.seen,
       dismissedAt: this.state.dismissed[creator.key],
+      fileKinds: prefs?.fileKinds,
+      gotFiles: prefs?.gotFiles,
     });
     const variants = creator.remotes.flatMap((r) => r.variants ?? []);
     if (variants.length) this.rememberSkipped(creator.key, variants, []);
@@ -1094,7 +1165,8 @@ export class AppController {
   /** Re-derives statuses after dismissals or link removals without a new check. */
   private refreshStatuses(): void {
     for (const creator of this.allCreators()) {
-      refreshCreatorStatus(creator, this.state.linkPrefs[creator.key]?.seen, this.state.dismissed[creator.key]);
+      const prefs = this.state.linkPrefs[creator.key];
+      refreshCreatorStatus(creator, prefs?.seen, this.state.dismissed[creator.key], prefs);
     }
     const core = this.state.lastResult?.core;
     if (core?.installed && core.releasedAt !== undefined) {
@@ -1110,18 +1182,32 @@ export class AppController {
         fresh.push(c.name);
       }
     }
+    // An archive that might be their update is often exactly that: asked about once, as a question.
+    const maybe: string[] = [];
+    const asked = (this.state.notifiedMaybe ??= {});
+    for (const c of result.creators) {
+      const ignored = new Set(this.state.linkPrefs[c.key]?.ignoredFiles ?? []);
+      const open = c.remotes.flatMap((r) => r.newFiles ?? []).filter((f) => f.archive && !f.kind && !f.superseded && !ignored.has(f.name.toLowerCase()));
+      const newest = Math.max(0, ...open.map((f) => f.updatedAt ?? 0));
+      if (newest > (asked[c.key] ?? 0)) {
+        asked[c.key] = newest;
+        // Named once: an update of theirs already brings them up, and the question waits on their row.
+        if (!fresh.includes(c.name)) maybe.push(c.name);
+      }
+    }
     const core = result.core;
     if (core.status === 'update-available' && core.releasedAt && this.state.notified[CORE_KEY] !== core.releasedAt) {
       this.state.notified[CORE_KEY] = core.releasedAt;
       fresh.unshift(`WickedWhims v${core.latestVersion}`);
     }
-    if (!fresh.length || !Notification.isSupported() || this.window?.isFocused()) return;
+    if ((!fresh.length && !maybe.length) || !Notification.isSupported() || this.window?.isFocused()) return;
     const m = t().main;
+    const names = [...fresh, ...maybe.map(m.notifyMaybeName)];
     const notification = new Notification({
-      title: m.notifyTitle(fresh.length),
+      title: fresh.length ? m.notifyTitle(fresh.length) : m.notifyMaybeTitle(maybe.length),
       // Windows keeps notification history, so names are opt-in.
       body: this.state.settings.notificationNames
-        ? fresh.slice(0, 5).join(', ') + (fresh.length > 5 ? `, ${m.notifyMore(fresh.length - 5)}` : '')
+        ? names.slice(0, 5).join(', ') + (names.length > 5 ? `, ${m.notifyMore(names.length - 5)}` : '')
         : m.notifyOpen,
     });
     notification.on('click', () => {

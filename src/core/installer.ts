@@ -7,6 +7,7 @@ import type { InstallOperation, InstallRecord, LocalFile } from '../shared/types
 import { t, translatedError } from '../shared/i18n/index.js';
 import { MOD_FILE } from './archive.js';
 import { throwIfCancelled } from './fetcher.js';
+import { sameFile } from './pack-files.js';
 import { isGameRunning as defaultIsGameRunning } from './process.js';
 
 export interface PlanInput {
@@ -26,15 +27,23 @@ export interface PlanInput {
 
 /**
  * Decides where each downloaded mod file goes: over the installed file with
- * the same name, otherwise next to the creator's newest installed file.
+ * the same name; failing that, in place of the one installed file that is
+ * another version or edition of it (sameFile), which it replaces; otherwise
+ * next to the creator's newest installed file.
  */
 export function planInstall(input: PlanInput): UpdatePlan {
   const warnings: string[] = [];
-  const installedByName = new Map(input.installedFiles.map((f) => [basename(f.path).toLowerCase(), f]));
-  const homeDir = defaultTargetDir(input.installedFiles, input.modsRoots);
+  // Files moved or deleted since they were scanned: replacing one would put a copy back where it was.
+  const installedFiles = input.installedFiles.filter((f) => existsSync(f.path));
+  const installedByName = new Map(installedFiles.map((f) => [basename(f.path).toLowerCase(), f]));
+  const homeDir = defaultTargetDir(installedFiles, input.modsRoots);
 
   const files: PlannedFile[] = [];
   const seen = new Map<string, string>();
+  const incomingNames = new Set(input.extractedFiles.filter((f) => MOD_FILE.test(f)).map((f) => basename(f).toLowerCase()));
+  // An installed file the download also has by name is replaced by that one, never renamed over.
+  const renameable = installedFiles.filter((f) => !incomingNames.has(basename(f.path).toLowerCase()));
+  const claimed = new Set<string>();
   for (const rel of input.extractedFiles.filter((f) => MOD_FILE.test(f))) {
     const name = basename(rel);
     const key = name.toLowerCase();
@@ -49,6 +58,15 @@ export function planInstall(input: PlanInput): UpdatePlan {
     const installed = installedByName.get(key);
     if (installed) {
       files.push({ source, target: installed.path, kind: 'replace', installedAt: installed.mtimeMs });
+      continue;
+    }
+    // Only when exactly one file of theirs is another version or edition of it: two would be a guess.
+    const older = renameable.filter((f) => sameFile(basename(f.path), name));
+    const replaces = older.length === 1 && !claimed.has(older[0]!.path) ? older[0]! : undefined;
+    const renamedTarget = replaces && join(dirname(replaces.path), name);
+    if (replaces && renamedTarget && !existsSync(renamedTarget)) {
+      claimed.add(replaces.path);
+      files.push({ source, target: renamedTarget, kind: 'replace', installedAt: replaces.mtimeMs, replaces: replaces.path });
       continue;
     }
     const dir = /\.ts4script$/i.test(name) ? scriptDir(homeDir, input.modsRoots) : homeDir;
@@ -67,7 +85,7 @@ export function planInstall(input: PlanInput): UpdatePlan {
     source: input.source,
     downloads: input.downloads,
     files,
-    possiblyObsolete: input.installedFiles.filter((f) => !incoming.has(basename(f.path).toLowerCase())).map((f) => f.path),
+    possiblyObsolete: installedFiles.filter((f) => !incoming.has(basename(f.path).toLowerCase()) && !claimed.has(f.path)).map((f) => f.path),
     skipped: input.extractedFiles.filter((f) => !MOD_FILE.test(f)),
     warnings,
     upToDate: false,
@@ -83,7 +101,8 @@ export async function markUnchanged(plan: UpdatePlan, signal?: AbortSignal): Pro
   for (const file of plan.files) {
     throwIfCancelled(signal);
     if (file.kind !== 'replace') continue;
-    file.unchanged = await sameContent(file.source, file.target);
+    // Renamed but byte for byte the same: nothing to install, and their file keeps its name.
+    file.unchanged = await sameContent(file.source, file.replaces ?? file.target);
   }
   plan.upToDate = plan.files.length > 0 && plan.files.every((f) => f.unchanged);
   plan.onlyAdds = !plan.upToDate && plan.files.some((f) => f.unchanged) && plan.files.every((f) => f.unchanged || f.kind === 'add');
@@ -150,7 +169,10 @@ export async function applyInstall(opts: ApplyOptions): Promise<InstallRecord> {
   if (await (opts.isGameRunning ?? defaultIsGameRunning)()) {
     throw translatedError((m) => m.installer.closeGameUpdate);
   }
-  for (const f of files) assertInside(f.target, modsRoots);
+  for (const f of files) {
+    assertInside(f.target, modsRoots);
+    if (f.replaces) assertInside(f.replaces, modsRoots);
+  }
   for (const path of opts.remove) {
     if (!plan.possiblyObsolete.includes(path)) throw new Error(`Refusing to remove a file outside the plan: ${path}`);
     assertInside(path, modsRoots);
@@ -171,6 +193,12 @@ export async function applyInstall(opts: ApplyOptions): Promise<InstallRecord> {
         done.push({ kind: 'replace', target: f.target, backup });
       } else {
         done.push({ kind: 'add', target: f.target });
+      }
+      // Another version or edition of it, under its old name: out, so the two don't both load.
+      if (f.replaces && existsSync(f.replaces)) {
+        const backup = backupPath(backupDir, f.replaces, modsRoots);
+        await move(f.replaces, backup);
+        done.push({ kind: 'remove', target: f.replaces, backup });
       }
       await mkdir(dirname(f.target), { recursive: true });
       await copyFile(f.source, f.target);

@@ -4,6 +4,7 @@ import type {
   CheckResult,
   CoreResult,
   CreatorResult,
+  FileAnswer,
   Listing,
   LocalFile,
   RemoteInfo,
@@ -20,7 +21,7 @@ import { type CreatorGroup, groupByCreator, matchName, normalizeName } from './c
 import { BrowserUnavailableError, CancelledError, type Fetcher, isChallengePage, LoadTimeoutError, throwIfCancelled, VerificationRequiredError } from './fetcher.js';
 import { readGameInfo } from './game.js';
 import { classifyRemotes, datePacks } from './ownership.js';
-import { datePageByFiles } from './pack-files.js';
+import { applyFileKinds, datePageByFiles, type GotFiles } from './pack-files.js';
 import { BUNDLED_OVERRIDES, type Overrides } from './overrides.js';
 import { type ScanCache, scanDirs } from './scanner.js';
 import { checkLoversLab, parseDownloadChooser } from './sources/loverslab.js';
@@ -52,6 +53,27 @@ export interface CreatorLinkPrefs {
    * name. They start unticked when an update brings them again; see pack-files.ts.
    */
   skippedFiles?: string[];
+  /**
+   * What the user said archives on their pages are (NewFileInfo.kind), by versionless name, so the
+   * same pack re-uploaded under a new date ("… 01-12-2026.zip") is taken the same way.
+   */
+  fileKinds?: Record<string, FileAnswer>;
+  /**
+   * Archives from their pages that an install downloaded (with Get it, or as an update): lower-case
+   * name → the upload date the page's list gave it (when it was installed, where the list didn't
+   * say), until it's undone. Theirs as of that date, as a file in their folders is as of its own: the
+   * card goes, an upload no newer isn't downloaded again, and the pack's later uploads, under the
+   * same name or a new one, count as its updates.
+   */
+  gotFiles?: GotFiles;
+  /**
+   * Upload dates the page's list gave the mod files WhimWatch installed from it, by lower-case name,
+   * with when each was installed. A copy's own date is when it was installed, often long after its
+   * upload: the page's newer files posted in between would read as posted with it. Used only while
+   * the copy still carries that install's date, so one replaced by hand goes by its own. Gone when
+   * the file is next replaced from somewhere without a list, or the install is undone.
+   */
+  uploadedAt?: Record<string, { upload: number; installed: number }>;
 }
 
 export type DiscoveryCache = Record<string, { at: number; urls: string[] }>;
@@ -192,7 +214,7 @@ export async function runCheck(opts: CheckOptions): Promise<CheckOutput> {
       progress('check', ++checked, totalListings(), `${plan.group.name}: ${listing.source}`);
     }
     await datePagesByFiles(plan.group, remotes, opts);
-    const creator = toCreatorResult(plan.group, remotes, opts.dismissed?.[plan.group.key], plan.prefs.seen);
+    const creator = toCreatorResult(plan.group, remotes, opts.dismissed?.[plan.group.key], plan.prefs.seen, plan.prefs);
     const mutedSources = UPDATE_SITES.filter((site) => plan.mutedFound.has(site));
     if (mutedSources.length) creator.mutedSources = mutedSources;
     opts.onCreator?.(creator);
@@ -217,11 +239,17 @@ export function unrecognizedFiles(files: LocalFile[], groups: CreatorGroup[]): L
   return files.filter((f) => f.kind !== 'ww-core' && !grouped.has(f));
 }
 
-export function toCreatorResult(group: CreatorGroup, found: RemoteInfo[], dismissedAt?: number, seen?: Record<string, number>): CreatorResult {
+export function toCreatorResult(
+  group: CreatorGroup,
+  found: RemoteInfo[],
+  dismissedAt?: number,
+  seen?: Record<string, number>,
+  files?: FileChoices,
+): CreatorResult {
   const localUpdatedAt = Math.max(...group.files.map((f) => f.mtimeMs));
   // Pages for packs the user doesn't have are marked here, where their files and pages are both in
   // hand, and are left out of the status by creatorStatus: a new pack is not an update.
-  const remotes = markSeenPages(datePacks(group, classifyRemotes(group, found)), seen);
+  const remotes = markSeenPages(applyFileChoices(datePacks(group, classifyRemotes(group, found)), files), seen);
   const { status, remoteUpdatedAt, behindBy } = creatorStatus(localUpdatedAt, remotes, dismissedAt);
   return {
     key: group.key,
@@ -236,8 +264,15 @@ export function toCreatorResult(group: CreatorGroup, found: RemoteInfo[], dismis
   };
 }
 
+/** What the user said about archives on a creator's pages, and which they got: see pack-files.ts. */
+export type FileChoices = Pick<CreatorLinkPrefs, 'fileKinds' | 'gotFiles'>;
+
+function applyFileChoices(remotes: RemoteInfo[], files: FileChoices | undefined): RemoteInfo[] {
+  return remotes.map((r) => applyFileKinds(r, files?.fileKinds, files?.gotFiles));
+}
+
 /** What the user has chosen for one creator, as it stands now. */
-export interface CreatorChoices {
+export interface CreatorChoices extends FileChoices {
   rejected: readonly string[];
   /** Sites turned off for every creator. */
   mutedSources: readonly UpdateSite[];
@@ -258,14 +293,19 @@ export function catchUpCreator(creator: CreatorResult, choices: CreatorChoices):
   const removed = creator.remotes.filter(isRejected);
   creator.remotes = creator.remotes.filter((r) => !isRejected(r));
   applyMutedSources({ creators: [creator] }, choices.mutedSources, { [creator.key]: choices.creatorMuted });
-  refreshCreatorStatus(creator, choices.seen, choices.dismissedAt);
+  refreshCreatorStatus(creator, choices.seen, choices.dismissedAt, choices);
   return removed;
 }
 
 /** Re-derives a creator's status from its pages and the current "seen" marks, without a new check. */
-export function refreshCreatorStatus(creator: CreatorResult, seen: Record<string, number> | undefined, dismissedAt: number | undefined): void {
-  // Marking one page as seen changes only that page, so re-apply them before comparing.
-  creator.remotes = markSeenPages(creator.remotes, seen);
+export function refreshCreatorStatus(
+  creator: CreatorResult,
+  seen: Record<string, number> | undefined,
+  dismissedAt: number | undefined,
+  files?: FileChoices,
+): void {
+  // Marking one page as seen, or saying what an archive is, changes only that page: re-apply before comparing.
+  creator.remotes = markSeenPages(applyFileChoices(creator.remotes, files), seen);
   const { status, remoteUpdatedAt, behindBy } = creatorStatus(creator.localUpdatedAt, creator.remotes, dismissedAt);
   Object.assign(creator, { status, remoteUpdatedAt, behindBy, dismissedAt });
 }
@@ -316,7 +356,8 @@ export function coreResult(files: LocalFile[], ww: WwModPage | undefined, error:
 async function datePagesByFiles(group: CreatorGroup, remotes: RemoteInfo[], opts: CheckOptions): Promise<void> {
   const probe = opts.fetcher.browserProbe;
   if (!probe) return;
-  const draft = toCreatorResult(group, remotes, opts.dismissed?.[group.key], opts.linkPrefs?.[group.key]?.seen);
+  const prefs = opts.linkPrefs?.[group.key];
+  const draft = toCreatorResult(group, remotes, opts.dismissed?.[group.key], prefs?.seen, prefs);
   const behind = outdatedRemotes(draft.remotes, draft.localUpdatedAt, draft.dismissedAt).filter((r) => r.listing.source === 'loverslab' && r.chooserUrl);
   for (const page of behind) {
     throwIfCancelled(opts.signal);
@@ -325,7 +366,7 @@ async function datePagesByFiles(group: CreatorGroup, remotes: RemoteInfo[], opts
       const res = await probe(page.listing.url, page.chooserUrl!);
       if (res.status !== 200 || !res.body || isChallengePage(res.body)) continue;
       const at = remotes.findIndex((r) => r.listing.url === page.listing.url);
-      if (at >= 0) remotes[at] = datePageByFiles(remotes[at]!, parseDownloadChooser(res.body, page.chooserUrl!), group.files);
+      if (at >= 0) remotes[at] = datePageByFiles(remotes[at]!, parseDownloadChooser(res.body, page.chooserUrl!), group.files, prefs?.gotFiles, prefs?.uploadedAt);
     } catch (err) {
       // Only the user's Cancel stops the check; anything else leaves the page's own date in place.
       if (err instanceof CancelledError && (!opts.signal || opts.signal.aborted)) throw err;
