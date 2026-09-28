@@ -38,7 +38,6 @@ describe('source ranking', () => {
   });
 
   it('names the sources updated after one whose download matched the installed files', () => {
-    const now = Date.parse('2026-09-15T12:00:00Z');
     const ll = remote('loverslab', '2026-03-19T12:00:00Z');
     const patreon = remote('patreon', '2026-09-14T12:00:00Z', { locked: true });
     const olderPatreon = remote('patreon', '2026-09-01T12:00:00Z');
@@ -48,10 +47,10 @@ describe('source ranking', () => {
     const later = laterSources([ll, olderPatreon, patreon, sameDayWcc, failed], ll.listing.url);
     // One entry per site (the newest), nothing within a day of LoversLab, no failed checks.
     expect(later).toEqual([patreon]);
-    expect(laterSourcesText(later, now)).toBe('Patreon was updated later, on Sep 14');
+    expect(laterSourcesText(later)).toBe('Patreon was updated later, on Sep 14, 2026');
 
     const wcc = remote('wickedcc', '2026-09-02T12:00:00Z');
-    expect(laterSourcesText(laterSources([ll, wcc, patreon], ll.listing.url), now)).toBe('Patreon (Sep 14) and wicked.cc (Sep 2) were updated later');
+    expect(laterSourcesText(laterSources([ll, wcc, patreon], ll.listing.url))).toBe('Patreon (Sep 14, 2026) and wicked.cc (Sep 2, 2026) were updated later');
     expect(laterSources([ll, patreon], patreon.listing.url)).toEqual([]);
   });
 
@@ -67,7 +66,6 @@ describe('source ranking', () => {
   });
 
   it('calls a newer page of the same site another page of it, not the site itself', () => {
-    const now = Date.parse('2026-09-17T12:00:00Z');
     // A creator with several wicked.cc pack pages: the one downloaded from, and a newer one.
     const owned = remote('wickedcc', '2026-07-05T12:00:00Z');
     const newerPack = remote('wickedcc', '2026-09-16T12:00:00Z');
@@ -75,11 +73,11 @@ describe('source ranking', () => {
 
     const later = laterSources([owned, newerPack, patreon], owned.listing.url);
     // "wicked.cc was updated later" under "Nothing new on this wicked.cc page" says nothing.
-    expect(laterSourcesText(later, now, 'wickedcc')).toBe('another wicked.cc page (Sep 16) and Patreon (Sep 10) were updated later');
+    expect(laterSourcesText(later, 'wickedcc')).toBe('another wicked.cc page (Sep 16, 2026) and Patreon (Sep 10, 2026) were updated later');
     // A different site is still named as itself.
-    expect(laterSourcesText(laterSources([owned, patreon], owned.listing.url), now, 'wickedcc')).toBe('Patreon was updated later, on Sep 10');
+    expect(laterSourcesText(laterSources([owned, patreon], owned.listing.url), 'wickedcc')).toBe('Patreon was updated later, on Sep 10, 2026');
     // Without the source that was checked, nothing changes for anyone else.
-    expect(laterSourcesText(later, now)).toBe('wicked.cc (Sep 16) and Patreon (Sep 10) were updated later');
+    expect(laterSourcesText(later)).toBe('wicked.cc (Sep 16, 2026) and Patreon (Sep 10, 2026) were updated later');
   });
 });
 

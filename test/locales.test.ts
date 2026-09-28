@@ -153,7 +153,7 @@ describe('Italian', () => {
     // Counted, not "settimana scorsa", which would need an article after "Uscito".
     expect(timeAgo(NOW - 8 * DAY, NOW)).toBe('1 settimana fa');
     expect(timeAgo(NOW - 2 * DAY, NOW)).toBe('l’altro ieri');
-    expect(formatShortDate(new Date(2026, 8, 11).getTime(), NOW)).toBe('11 set');
+    expect(formatShortDate(new Date(2026, 8, 11).getTime())).toBe('11 set 2026');
     expect(dayLabel(NOW - DAY, NOW)).toBe('Ieri');
     expect(dayLabel(new Date(2026, 8, 11, 9).getTime(), NOW)).toBe('Venerdì 11 set');
     expect(dayLabel(new Date(2026, 7, 2).getTime(), NOW)).toBe('Agosto');

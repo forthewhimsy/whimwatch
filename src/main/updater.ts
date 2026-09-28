@@ -138,7 +138,7 @@ export class Updater {
               const label = SOURCE_LABEL[plan.source];
               if (this.controller.statusOf(key) !== 'update-available') return m.batchUpToDate(label);
               const later = laterSources(this.target(key)?.remotes ?? [], plan.downloadUrl);
-              return later.length ? m.batchLater(label, laterSourcesText(later, undefined, plan.source), later.length) : m.batchNewerElsewhere(label);
+              return later.length ? m.batchLater(label, laterSourcesText(later, plan.source), later.length) : m.batchNewerElsewhere(label);
             }
             if (plan.onlyAdds) {
               // Not installed on the user's behalf, since it's usually a new pack rather than an update

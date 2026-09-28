@@ -114,18 +114,18 @@ export function laterSources(remotes: RemoteInfo[], listingUrl: string): RemoteI
 }
 
 /**
- * "Patreon was updated later, on Sep 14" or "Patreon (Sep 14) and wicked.cc (Sep 2) were updated
- * later". With `checkedSource`, a page of that same site reads as "another wicked.cc page":
+ * "Patreon was updated later, on Sep 14, 2026" or "Patreon (Sep 14, 2026) and wicked.cc (Sep 2, 2026)
+ * were updated later". With `checkedSource`, a page of that same site reads as "another wicked.cc page":
  * creators with several pages on one site are common, and "wicked.cc was updated later" under
  * "Nothing new on wicked.cc" says nothing useful.
  */
-export function laterSourcesText(later: RemoteInfo[], now = Date.now(), checkedSource?: SourceId): string {
+export function laterSourcesText(later: RemoteInfo[], checkedSource?: SourceId): string {
   const m = t().updater;
   const name = (r: RemoteInfo): string => (r.listing.source === checkedSource ? m.anotherPage(SOURCE_LABEL[r.listing.source]) : SOURCE_LABEL[r.listing.source]);
   const [only] = later;
   if (!only) return '';
-  if (later.length === 1) return m.laterOne(name(only), formatShortDate(only.updatedAt, now));
-  return m.laterMany(later.map((r) => m.laterWithDate(name(r), formatShortDate(r.updatedAt, now))));
+  if (later.length === 1) return m.laterOne(name(only), formatShortDate(only.updatedAt));
+  return m.laterMany(later.map((r) => m.laterWithDate(name(r), formatShortDate(r.updatedAt))));
 }
 
 /**
