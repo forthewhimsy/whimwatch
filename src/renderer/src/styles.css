@@ -1525,6 +1525,20 @@ button.chip {
   overflow: auto;
 }
 
+/* The body scrolls, its parts don't shrink. A part with overflow: hidden (a bordered file list) has no
+   minimum height as a flex item, so it was squeezed to fit the window and clipped its own rows, and with
+   nothing left overflowing, the body showed no scrollbar. */
+.dialog-body > * {
+  flex-shrink: 0;
+}
+
+/* Except what scrolls inside itself (the Licences and Diagnostics text, the Other files list): that
+   still gives way to a short window, so there's one scroll bar and not one inside another. */
+.dialog-body > textarea,
+.dialog-body > .virtual-list {
+  flex-shrink: 1;
+}
+
 .dialog-foot {
   display: flex;
   align-items: center;
@@ -1651,6 +1665,11 @@ button.chip {
 
 .file-section {
   padding: var(--s3) 0 0;
+}
+
+/* The list's own border is the top line. */
+.file-changes > :first-child {
+  border-top: 0;
 }
 
 .file-section > .section-label,
