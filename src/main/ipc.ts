@@ -63,6 +63,8 @@ export function registerIpc(controller: AppController, updater: Updater, isTrust
     stopUpdateAll: async () => updater.stopUpdateAll(),
     cancelUpdate: (key) => updater.cancel(key),
     cancelUpdateAll: async () => updater.cancelUpdateAll(),
+    finishReview: (choices) => updater.finishReview(choices),
+    setAddNewFiles: (key, on) => controller.setAddNewFiles(key, on),
     getStorage: () => updater.storage(),
     getDiagnostics: () => controller.getDiagnostics(),
     copyDiagnostics: async () => controller.copyDiagnostics(),

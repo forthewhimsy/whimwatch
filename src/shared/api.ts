@@ -31,7 +31,8 @@ export interface LinkBrowser {
   isDefault: boolean;
 }
 
-export type BatchItemState = 'queued' | 'working' | 'done' | 'failed' | 'cancelled';
+/** `review`: downloaded, and waiting for the user to choose which files go in (see BatchItem.review). */
+export type BatchItemState = 'queued' | 'working' | 'review' | 'done' | 'failed' | 'cancelled';
 
 export interface BatchItem {
   key: string;
@@ -43,6 +44,22 @@ export interface BatchItem {
   /** Files replaced and added, once installed. */
   replaced?: number;
   added?: number;
+  /** Names of the files it added that the user didn't have, so the summary says what arrived. */
+  addedNames?: string[];
+  /**
+   * An update that adds files the user doesn't have: its files, to tick, while it waits in the
+   * review. Files they left out before start unticked (startUnticked), as in the Update window.
+   */
+  review?: { files: PlannedFile[]; startUnticked?: string[] };
+}
+
+/** What the user chose for an update waiting in Update all's review. */
+export interface ReviewChoice {
+  key: string;
+  /** Targets not to install. */
+  skip: string[];
+  /** Add this creator's new files without asking from now on (CreatorLinkPrefs.addNewFiles). */
+  always?: boolean;
 }
 
 /** Progress of "Update all" (or automatic installs after a check). */
@@ -93,6 +110,8 @@ export interface AppSnapshot {
   creatorMutedSources: Record<string, UpdateSite[]>;
   /** Creator key → new files on their pages the user isn't interested in, by lower-case name. */
   ignoredFiles: Record<string, string[]>;
+  /** Creator keys whose new files are added without asking (CreatorLinkPrefs.addNewFiles). */
+  addNewFiles: string[];
   /** Patreon pages being read again after a sign-in, whose rows and cards say "Checking…". */
   rechecking?: string[];
   /** What the user said archives on each creator's pages are, by creator key: listed so each can be taken back. */
@@ -345,6 +364,10 @@ export interface WhimWatchApi {
   stopUpdateAll(): Promise<void>;
   /** Stops immediately (unless an install is mid-way, which finishes first). */
   cancelUpdateAll(): Promise<void>;
+  /** Installs the updates waiting in Update all's review as chosen; the ones not named are left for later. */
+  finishReview(choices: ReviewChoice[]): Promise<void>;
+  /** Adds a creator's new files without asking, or stops doing so. */
+  setAddNewFiles(key: string, on: boolean): Promise<AppSnapshot>;
   onEvent(listener: (event: AppEvent) => void): () => void;
 }
 
@@ -397,6 +420,8 @@ export const API_METHODS = [
   'stopUpdateAll',
   'cancelUpdate',
   'cancelUpdateAll',
+  'finishReview',
+  'setAddNewFiles',
   'getStorage',
   'getDiagnostics',
   'copyDiagnostics',

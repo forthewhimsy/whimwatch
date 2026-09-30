@@ -295,6 +295,15 @@ export function startUnticked(files: readonly { target: string; kind: string }[]
 }
 
 /**
+ * The files an update would put in that the user doesn't have, didn't leave out before, and so
+ * hasn't seen: Update all asks about these rather than installing them unseen, since a pack's
+ * update can bring anything with it (a custom erotic jumpscare loading screen, let's say).
+ */
+export function newFiles<T extends { target: string; kind: string; unchanged?: boolean }>(plan: { files: readonly T[]; startUnticked?: readonly string[] }): T[] {
+  return plan.files.filter((f) => f.kind === 'add' && !f.unchanged && !plan.startUnticked?.includes(f.target));
+}
+
+/**
  * The files on a page's list the user already has, going by dates alone, so an update needn't
  * download them to find that out: listed under the name of a file of theirs, and posted no later
  * than their copy. No day's leeway, unlike page dates: a copy installed by hand usually carries the

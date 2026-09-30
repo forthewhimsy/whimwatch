@@ -1,5 +1,5 @@
 import { t } from '../shared/i18n/index.js';
-import type { BatchState } from '../shared/api.js';
+import type { BatchItem, BatchState } from '../shared/api.js';
 import { CancelledError } from './fetcher.js';
 
 /** Thrown by a batch step when nothing after it can succeed either (e.g. the game is running). */
@@ -14,6 +14,9 @@ export interface BatchStepResult {
   message?: string;
   replaced?: number;
   added?: number;
+  addedNames?: string[];
+  /** Not installed: it waits for the user to choose its files (BatchItem.review). */
+  review?: BatchItem['review'];
 }
 
 export async function runBatch(
@@ -33,8 +36,8 @@ export async function runBatch(
     emit();
     try {
       const result = await work(item.key);
-      const { message, replaced, added } = typeof result === 'string' ? { message: result } : (result ?? {});
-      Object.assign(item, { state: 'done', message: message || undefined, replaced, added });
+      const { message, replaced, added, addedNames, review } = typeof result === 'string' ? { message: result } : (result ?? {});
+      Object.assign(item, { state: review ? 'review' : 'done', message: message || undefined, replaced, added, addedNames, review });
     } catch (err) {
       if (err instanceof CancelledError) {
         item.state = 'cancelled';

@@ -30,6 +30,7 @@ import { type PrivacyLevel, privacyLevel, privacyLevelPatch } from '../../shared
 import { type AppSettings, UPDATE_SITES } from '../../shared/types';
 import { Dialog, useConfirm } from './dialog';
 import { DuplicatesDialog } from './DuplicatesDialog';
+import { CORE_KEY } from './eligibility';
 import { acceleratorFromKey, acceleratorKeys, formatBytes, SOURCE_LABEL, timeAgo } from './format';
 import { useToast } from './toast';
 import { api, type AppModel } from './useApp';
@@ -450,12 +451,30 @@ const KEEP_OPTIONS = [7, 30, 90, 0];
 
 function Updates({ snapshot, app, set }: { snapshot: AppSnapshot; app: AppModel; set: Setter }) {
   const { settings } = snapshot;
+  const toast = useToast();
   const m = t().settings;
+  const trusted = snapshot.addNewFiles.map((key) => ({
+    key,
+    name: key === CORE_KEY ? 'WickedWhims' : (snapshot.lastResult?.creators.find((c) => c.key === key)?.name ?? key),
+  }));
+  const askAgain = async (key: string, name: string): Promise<void> => {
+    if (!(await app.run(() => api.setAddNewFiles(key, false)))) return;
+    toast({ text: m.askingAgain(name), action: { label: t().common.undo, run: () => void app.run(() => api.setAddNewFiles(key, true)) } });
+  };
   return (
     <>
       <PageHead title={m.section.updates} text={m.updatesIntro} />
       <Group label={m.installing}>
         <ToggleRow title={m.autoInstall} hint={m.autoInstallHint} checked={settings.autoInstall} onChange={(v) => set({ autoInstall: v })} />
+        <SettingRow title={m.addNewFiles} hint={trusted.length ? m.addNewFilesHint : m.addNewFilesNone}>
+          {null}
+        </SettingRow>
+        {trusted.map(({ key, name }) => (
+          <div key={key} className="setting-row indent">
+            <span className="grow">{name}</span>
+            <IconButton label={m.askAgain(name)} icon={X} size={16} onClick={() => void askAgain(key, name)} />
+          </div>
+        ))}
       </Group>
       <Group label={m.backups}>
         <SettingRow title={m.keepBackups} hint={m.keepBackupsHint}>

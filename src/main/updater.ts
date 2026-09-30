@@ -8,10 +8,10 @@ import { CORE_KEY } from '../core/check.js';
 import { chooserDownloads, DownloadUnavailableError } from '../core/downloads.js';
 import { CancelledError, throwIfCancelled } from '../core/fetcher.js';
 import { applyInstall, markUnchanged, planInstall, undoInstall } from '../core/installer.js';
-import { currentByDate, startUnticked, updateExclusions } from '../core/pack-files.js';
+import { currentByDate, newFiles, startUnticked, updateExclusions } from '../core/pack-files.js';
 import { isGameRunning } from '../core/process.js';
 import { chooseRemote } from '../core/source-choice.js';
-import type { AppSnapshot, BatchState, StorageInfo, UpdateChoice, UpdatePlan, UpdateStage } from '../shared/api.js';
+import type { AppSnapshot, BatchItem, BatchState, StorageInfo, UpdateChoice, UpdatePlan, UpdateStage } from '../shared/api.js';
 import { numberFormat } from '../shared/i18n/format.js';
 import { englishMessage, t, translatedError } from '../shared/i18n/index.js';
 import { SOURCE_LABEL } from '../shared/labels.js';
@@ -60,6 +60,12 @@ export class Updater {
   private stopRequested = false;
   /** Cancel switches for updates being prepared, by creator key. */
   private aborts = new Map<string, AbortController>();
+  /** Updates from the last Update all that add files, waiting for the user to choose them: creator key → plan id. */
+  private held = new Map<string, string>();
+  /** The last Update all run, kept so the updates waiting in its review can be finished. */
+  private batch?: BatchState;
+  /** Creators in that run left for later from its review, so installing one from its Update window can say so there. */
+  private setAside = new Set<string>();
 
   constructor(
     private readonly controller: AppController,
@@ -107,6 +113,8 @@ export class Updater {
   /**
    * "Update all": plans and installs each creator in turn with the defaults
    * (every downloaded file, nothing removed). Keeps going when one fails.
+   * An update that adds files the user doesn't have isn't installed unseen: it waits, downloaded,
+   * for them to choose its files (finishReview), unless they said to add that creator's new files.
    */
   async updateAll(keys: unknown, opts: PlanOptions & { skipIfWarnings?: boolean; automatic?: boolean } = {}): Promise<BatchState | undefined> {
     if (this.batchRunning) throw translatedError((m) => m.updater.alreadyUpdating);
@@ -123,7 +131,10 @@ export class Updater {
     this.stopRequested = false;
     const batchId = randomUUID();
     try {
-      return await runBatch(
+      // A new run replaces the last one, and with it any updates still waiting in its review.
+      for (const key of [...this.held.keys()]) await this.discardPlans(key);
+      this.setAside.clear();
+      return (this.batch = await runBatch(
         items,
         async (key) => {
           try {
@@ -154,17 +165,19 @@ export class Updater {
             }
             if (!plan.files.length) throw translatedError((m) => m.installer.noModFiles);
             if (opts.skipIfWarnings && plan.warnings.length) throw translatedError((m) => m.updater.needsALook(plan.warnings[0]!));
+            const adds = newFiles(plan).length;
+            if (adds && !this.controller.addsNewFiles(key)) {
+              // Nobody is there to choose: left, with its row on Update ready, for the Update window.
+              if (opts.automatic) throw translatedError((m) => m.updater.batchNewFiles(adds));
+              this.held.set(key, plan.id);
+              return {
+                message: m.batchNewFiles(adds),
+                review: { files: plan.files.filter((f) => !f.unchanged), ...(plan.startUnticked?.length && { startUnticked: plan.startUnticked }) },
+              };
+            }
             // Nobody is there to tick them: files left out before stay out.
             await this.apply(plan.id, { remove: [], skip: plan.startUnticked ?? [] }, { batchId, automatic: opts.automatic });
-            const changed = plan.files.filter((f) => !f.unchanged && !plan.startUnticked?.includes(f.target));
-            return {
-              // Left out without anyone asking, so said out loud: the file is still one tick away.
-              message: `${m.batchInstalled(changed.length, SOURCE_LABEL[plan.source])}${
-                plan.startUnticked?.length ? ` · ${m.batchLeftOut(plan.startUnticked.length)}` : ''
-              }${plan.warnings.length ? ` (${plan.warnings[0]})` : ''}`,
-              replaced: changed.filter((f) => f.kind === 'replace').length,
-              added: changed.filter((f) => f.kind === 'add').length,
-            };
+            return installedResult(plan, plan.startUnticked ?? []);
           } catch (err) {
             // Don't leave a failed item's downloads in temp until the next launch.
             await this.discardPlans(key);
@@ -174,9 +187,74 @@ export class Updater {
         (state) => this.controller.setBatch(state),
         () => this.stopRequested,
         batchId,
-      );
+      ));
     } finally {
       this.batchRunning = false;
+    }
+  }
+
+  /**
+   * Installs the updates waiting in Update all's review with the files the user ticked (`skip` is
+   * what they unticked), in turn, as part of that run so Undo all covers them. Any not named, or
+   * with nothing ticked, are left for later: their downloads go, and their rows stay on Update ready.
+   * Stop after this one and Cancel now leave the rest for later too; an install itself can't be interrupted.
+   */
+  async finishReview(choices: unknown): Promise<void> {
+    if (this.batchRunning) throw translatedError((m) => m.updater.alreadyUpdating);
+    const batch = this.batch;
+    const waiting = batch?.items.filter((i) => i.state === 'review') ?? [];
+    if (!batch || !waiting.length) return;
+    const chosen = new Map<string, { skip: string[]; always: boolean }>();
+    for (const c of Array.isArray(choices) ? (choices as unknown[]) : []) {
+      if (!c || typeof c !== 'object') continue;
+      const { key, skip, always } = c as Record<string, unknown>;
+      if (typeof key === 'string') chosen.set(key, { skip: Array.isArray(skip) ? skip.filter((p): p is string => typeof p === 'string') : [], always: always === true });
+    }
+    // What goes in: an update chosen, still downloaded, with something ticked.
+    const jobs = new Map(
+      waiting.flatMap((item) => {
+        const planId = this.held.get(item.key);
+        const entry = planId ? this.plans.get(planId) : undefined;
+        const choice = chosen.get(item.key);
+        const ticked = entry && choice ? entry.plan.files.some((f) => !f.unchanged && !choice.skip.includes(f.target)) : false;
+        return entry && choice && ticked ? [[item, { entry, choice }] as const] : [];
+      }),
+    );
+    // Every install would fail the same way: leave them all waiting. Not now installs nothing, so neither
+    // holds it up. The lock is held by another update or by duplicate removal.
+    if (jobs.size && this.isBusy()) throw translatedError((m) => m.updater.anotherUpdate);
+    if (jobs.size && (await isGameRunning())) throw translatedError((m) => m.installer.closeGameUpdate);
+    this.batchRunning = true;
+    this.stopRequested = false;
+    batch.running = true;
+    try {
+      for (const item of waiting) {
+        const job = jobs.get(item);
+        if (!job || this.stopRequested) {
+          await this.discardPlans(item.key);
+          Object.assign(item, { state: 'cancelled', message: t().updater.leftForLater, review: undefined });
+          continue;
+        }
+        this.held.delete(item.key);
+        Object.assign(item, { state: 'working', review: undefined });
+        this.emitBatch();
+        try {
+          await this.exclusive(() => this.install(job.entry, { remove: [], skip: job.choice.skip }, { batchId: batch.batchId }));
+          Object.assign(item, { state: 'done', ...installedResult(job.entry.plan, job.choice.skip) });
+        } catch (err) {
+          await this.discardPlans(item.key);
+          Object.assign(item, { state: 'failed', message: (err as Error).message });
+        }
+        // Apart from the install: its files are in whether or not the choice could be saved.
+        if (item.state === 'done' && job.choice.always) {
+          await this.controller.setAddNewFiles(item.key, true).catch((err: Error) => console.warn('Could not save "Always add":', englishMessage(err)));
+        }
+        this.emitBatch();
+      }
+    } finally {
+      batch.running = false;
+      this.batchRunning = false;
+      this.emitBatch();
     }
   }
 
@@ -216,6 +294,7 @@ export class Updater {
   /** Leftover downloads, the log, and everything the LoversLab/Patreon browsers stored except sign-ins. */
   async clearCaches(): Promise<StorageInfo> {
     if (this.isBusy()) throw translatedError((m) => m.main.waitForUpdate);
+    for (const key of [...this.held.keys()]) this.leaveForLater(key);
     this.plans.clear();
     clearLog();
     await removeDir(this.tempRoot);
@@ -226,6 +305,8 @@ export class Updater {
 
   /** After a check: install wicked.cc updates that need no decisions (setting "install automatically"). */
   async autoInstall(result: CheckResult): Promise<void> {
+    // The user is choosing files for the last Update all: a new run would throw that away.
+    if (this.held.size) return;
     const keys = result.creators.filter((c) => c.status === 'update-available').map((c) => c.key);
     if (result.core.status === 'update-available') keys.unshift(CORE_KEY);
     const batch = await this.updateAll(keys, { publicOnly: true, skipIfWarnings: true, automatic: true }).catch((err: Error) => {
@@ -425,6 +506,13 @@ export class Updater {
       );
       const newPack = this.isNewPackPage(plan);
       progress('done', newPack ? t().updater.added(plan.name) : t().updater.updated(plan.name));
+      // Left for later in Update all's review, then installed from its Update window: say so there. Not
+      // counted with the run's installs, since that run's Undo all doesn't cover it.
+      const setAside = !meta.batchId && this.setAside.delete(plan.creatorKey) ? this.batch?.items.find((i) => i.key === plan.creatorKey) : undefined;
+      if (setAside) {
+        Object.assign(setAside, { state: 'done', message: installedResult(plan, choice.skip).message });
+        this.emitBatch();
+      }
       // A LoversLab archive has no file of its name in the Mods folder to say the user has it now. It's
       // theirs as of the upload the list dated, where it did; failing that, as of now.
       const got = plan.source === 'loverslab' ? plan.downloads.filter((d) => ARCHIVE_FILE.test(d)).map((d) => d.toLowerCase()) : [];
@@ -460,11 +548,30 @@ export class Updater {
 
   /** Drops earlier prepared downloads for a creator (e.g. after switching source). */
   private async discardPlans(creatorKey: string): Promise<void> {
+    // Its download is going (the Update window preparing it again, say): the review can't install it now.
+    this.leaveForLater(creatorKey);
     for (const [id, entry] of this.plans) {
       if (entry.plan.creatorKey !== creatorKey) continue;
       this.plans.delete(id);
       await rm(entry.workDir, { recursive: true, force: true });
     }
+  }
+
+  /** An update waiting in the review won't be installed from it: say so, and forget it. */
+  private leaveForLater(creatorKey: string): void {
+    if (!this.held.delete(creatorKey)) return;
+    const item = this.batch?.items.find((i) => i.key === creatorKey && i.state === 'review');
+    if (!item) return;
+    Object.assign(item, { state: 'cancelled', message: t().updater.leftForLater, review: undefined });
+    this.setAside.add(creatorKey);
+    this.emitBatch();
+  }
+
+  /** Sends the last run's state to the window; mid-review, with whether Stop was pressed, as runBatch does. */
+  private emitBatch(): void {
+    const batch = this.batch;
+    if (!batch) return;
+    this.controller.setBatch({ ...batch, stopRequested: batch.running && this.stopRequested, items: batch.items.map((i) => ({ ...i })) });
   }
 
   private signedIn(opts: PlanOptions): (site: 'loverslab' | 'patreon') => boolean {
@@ -525,4 +632,21 @@ function bytes(n: number): string {
   if (n < 1024 * 1024) return `${numberFormat({ maximumFractionDigits: 0 }).format(n / 1024)} KB`;
   const digits = n < 100 * 1024 * 1024 ? 1 : 0;
   return `${numberFormat({ minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n / 1024 / 1024)} MB`;
+}
+
+/** What a batch item says once installed, `skip` being the files left out. */
+function installedResult(plan: UpdatePlan, skip: readonly string[]): Pick<BatchItem, 'message' | 'replaced' | 'added' | 'addedNames'> {
+  const m = t().updater;
+  const changed = plan.files.filter((f) => !f.unchanged && !skip.includes(f.target));
+  const added = changed.filter((f) => f.kind === 'add');
+  // Files skipped before and still left out: said out loud, since the file is still one tick away.
+  const leftOut = plan.startUnticked?.filter((target) => skip.includes(target)).length ?? 0;
+  return {
+    message: `${m.batchInstalled(changed.length, SOURCE_LABEL[plan.source])}${leftOut ? ` · ${m.batchLeftOut(leftOut)}` : ''}${
+      plan.warnings.length ? ` (${plan.warnings[0]})` : ''
+    }`,
+    replaced: changed.filter((f) => f.kind === 'replace').length,
+    added: added.length,
+    ...(added.length && { addedNames: added.map((f) => basename(f.target)) }),
+  };
 }

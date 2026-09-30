@@ -198,6 +198,7 @@ too.
   version or edition of it under a different name (`Pack_v2` for `Pack_v1`). Other installed files from that creator
   that aren't in the download are listed but kept, unless you tick them for removal; *Update all*
   never ticks them.
+- **New files:** An update that brings files you don't have is never installed without your input (which can be saved per creator)
 - **Duplicate files** are only looked for when you ask, and only removed after you've picked which
   copy stays. Removed copies go to a backup folder like replaced files. See
   [Extras and tools](#extras-and-tools).

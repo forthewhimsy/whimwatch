@@ -511,7 +511,8 @@ const KIND = {
   remove: { icon: Minus, off: 'keep' },
 } as const;
 
-function FileLine({
+/** One file of an update, ticked to install it (or, for `remove`, to remove it). */
+export function FileLine({
   kind,
   path,
   replaces,
@@ -552,7 +553,7 @@ function FileLine({
   );
 }
 
-const toggle = (list: string[], value: string): string[] => (list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+export const toggle = (list: string[], value: string): string[] => (list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
 
 function ProgressBar({ received, total }: { received?: number; total?: number }) {
   const pct = received !== undefined && total ? Math.min(100, (received / total) * 100) : undefined;

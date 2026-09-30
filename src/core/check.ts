@@ -54,6 +54,12 @@ export interface CreatorLinkPrefs {
    */
   skippedFiles?: string[];
   /**
+   * The user said to add this creator's new files without asking: Update all (and automatic
+   * installs) put in files they don't have yet, as the Update window's defaults would. Without it,
+   * an update that adds files waits for them to choose; see Updater.updateAll.
+   */
+  addNewFiles?: true;
+  /**
    * What the user said archives on their pages are (NewFileInfo.kind), by versionless name, so the
    * same pack re-uploaded under a new date ("… 01-12-2026.zip") is taken the same way.
    */

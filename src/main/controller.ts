@@ -294,6 +294,7 @@ export class AppController {
       creatorMutedSources: Object.fromEntries(Object.entries(s.linkPrefs).flatMap(([k, v]) => (v.mutedSources?.length ? [[k, v.mutedSources]] : []))),
       rechecking: [...this.rechecking],
       ignoredFiles: Object.fromEntries(Object.entries(s.linkPrefs).flatMap(([k, v]) => (v.ignoredFiles?.length ? [[k, v.ignoredFiles]] : []))),
+      addNewFiles: Object.entries(s.linkPrefs).flatMap(([k, v]) => (v.addNewFiles === true ? [k] : [])),
       fileAnswers: Object.fromEntries(Object.entries(s.linkPrefs).flatMap(([k, v]) => (v.fileKinds ? [[k, Object.values(v.fileKinds)]] : []))),
       browsers: (await installedBrowsers()).map(({ id, name, privateMode, isDefault }) => ({ id, name, privateMode, isDefault })),
       backupRoot: this.backupRoot,
@@ -827,6 +828,26 @@ export class AppController {
     if (!prefs.mutedSources.length) delete prefs.mutedSources;
     this.applyMuted();
     return this.commit();
+  }
+
+  /**
+   * Adds a creator's new files without asking in Update all and automatic installs, or asks again.
+   * Only for a creator the list shows (or WickedWhims), so the renderer can't plant keys in the state.
+   */
+  async setAddNewFiles(key: unknown, on: unknown): Promise<AppSnapshot> {
+    const k = str(key);
+    if (on === true) {
+      if (k !== CORE_KEY && !this.shownCreator(k)) throw new Error('Unknown creator');
+      this.prefs(k).addNewFiles = true;
+    } else if (this.state.linkPrefs[k]) {
+      delete this.state.linkPrefs[k].addNewFiles;
+    }
+    return this.commit();
+  }
+
+  /** Whether the user said to add this creator's new files without asking. */
+  addsNewFiles(key: string): boolean {
+    return this.state.linkPrefs[key]?.addNewFiles === true;
   }
 
   /**

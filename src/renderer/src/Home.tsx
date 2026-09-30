@@ -85,6 +85,8 @@ export function Home({
 
   const candidates = updateCandidates(result?.core, running ? [] : rows.map((r) => r.creator), snapshot);
   const updates = counts.updates + (result?.core.status === 'update-available' ? 1 : 0);
+  /** Updates from the last Update all waiting for their files to be chosen. */
+  const waiting = app.batch?.running ? 0 : (app.batch?.items.filter((i) => i.state === 'review').length ?? 0);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const onTabKey = (e: KeyboardEvent, index: number): void => {
@@ -241,9 +243,10 @@ export function Home({
                   {t().common.markAllAsSeen}
                 </Button>
               )}
-              {(candidates.eligible.length > 0 || app.batch?.running) && (
-                <Button variant="primary" icon={Download} onClick={onUpdateAll} disabled={running} title={running ? afterCheck() : undefined}>
-                  {app.batch?.running ? m.updating : m.updateAll(candidates.eligible.length)}
+              {(candidates.eligible.length > 0 || app.batch?.running || waiting > 0) && (
+                // Updates waiting for their files to be chosen can be looked at during a check; only installing waits.
+                <Button variant="primary" icon={Download} onClick={onUpdateAll} disabled={running && !waiting} title={running && !waiting ? afterCheck() : undefined}>
+                  {app.batch?.running ? m.updating : waiting ? t().updateAll.reviewTitle(waiting) : m.updateAll(candidates.eligible.length)}
                 </Button>
               )}
             </div>

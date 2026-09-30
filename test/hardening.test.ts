@@ -62,6 +62,17 @@ describe('state saving', () => {
     expect((await readdir(tmp)).filter((f) => f.endsWith('.tmp'))).toEqual([]);
   });
 
+  it("keeps a creator's new files being added without asking across restarts", async () => {
+    const { loadState } = await import('../src/core/store.js');
+    const path = join(tmp, 'adds.json');
+    const state = defaultState();
+    state.linkPrefs.moonberry = { rejected: [], manual: [], addNewFiles: true };
+    await saveState(path, state);
+    const loaded = await loadState(path);
+    expect(loaded.linkPrefs.moonberry?.addNewFiles).toBe(true);
+    expect(loaded.linkPrefs.amberlily?.addNewFiles).toBeUndefined();
+  });
+
   it('keeps sites turned off, for everyone and per creator, across restarts', async () => {
     const { loadState } = await import('../src/core/store.js');
     const path = join(tmp, 'sites.json');
