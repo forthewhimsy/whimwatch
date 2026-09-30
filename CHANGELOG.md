@@ -3,6 +3,16 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-09-30
+
+### Fixed
+
+- *Update all* no longer installs files you don't have without asking. An update that adds new
+  files (a custom loading screen containing an erotic jumpscare, let's say...) waits for you to choose them. Automatic installs leave those
+  updates for you. This includes WickedWhims itself.
+- *Always add new files from* a creator skips the question for that creator going forward. `Settings → Updates` &
+  backups can reverse this decision at any time.
+
 ## [0.4.0] - 2026-09-28
 
 ### Added
