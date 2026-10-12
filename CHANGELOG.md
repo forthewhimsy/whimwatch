@@ -3,6 +3,12 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] - 2026-10-12
+
+### Fixed
+
+- Small fix to make the "Downloading from..." banner update when a fallback source is chosen AFTER a download is already initiated
+
 ## [0.4.1] - 2026-09-30
 
 ### Fixed

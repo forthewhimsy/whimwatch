@@ -1,1 +1,0 @@
-- Small fix to make the "Downloading from..." banner update when a fallback source is chosen AFTER a download is already initiated
