@@ -21,7 +21,8 @@ export interface BatchStepResult {
 
 export async function runBatch(
   items: { key: string; name: string; source?: string }[],
-  work: (key: string) => Promise<string | BatchStepResult | void>,
+  /** `setSource` corrects the item's source label once the step knows where it downloads from. */
+  work: (key: string, setSource: (source: string) => void) => Promise<string | BatchStepResult | void>,
   onChange: (state: BatchState) => void,
   shouldStop: () => boolean,
   batchId?: string,
@@ -35,7 +36,11 @@ export async function runBatch(
     item.state = 'working';
     emit();
     try {
-      const result = await work(item.key);
+      const result = await work(item.key, (source) => {
+        if (source === item.source) return;
+        item.source = source;
+        emit();
+      });
       const { message, replaced, added, addedNames, review } = typeof result === 'string' ? { message: result } : (result ?? {});
       Object.assign(item, { state: review ? 'review' : 'done', message: message || undefined, replaced, added, addedNames, review });
     } catch (err) {

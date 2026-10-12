@@ -8,11 +8,23 @@ import { newFiles } from '../src/core/pack-files.js';
 import type { BatchState, UpdatePlan } from '../src/shared/api.js';
 import { t } from '../src/shared/i18n/index.js';
 import type { CreatorLinkPrefs } from '../src/core/check.js';
-import type { CreatorResult, InstallRecord, LocalFile } from '../src/shared/types.js';
+import type { CreatorResult, InstallRecord, LocalFile, SourceId } from '../src/shared/types.js';
 
 // The updater's Electron side (site browsers, downloads) isn't reached: plans are made here.
 vi.mock('../src/main/browser.js', () => ({ sessionsToClear: () => [], siteSession: () => ({}) }));
-vi.mock('../src/main/downloads.js', () => ({}));
+// Only the source choice reaches the sites (to count each page's files); its download stops there.
+const sites = vi.hoisted(() => ({ files: {} as Record<string, number> }));
+vi.mock('../src/main/downloads.js', () => {
+  const stop = async (): Promise<never> => {
+    throw new Error('No downloads here');
+  };
+  return {
+    resolveOffer: async (remote: { listing: { url: string } }) => ({ files: Array.from({ length: sites.files[remote.listing.url] ?? 1 }, (_, i) => `f${i}`) }),
+    offerFileCount: (offer: { files: string[] }) => offer.files.length,
+    loversLabFileList: stop,
+    downloadForRemote: stop,
+  };
+});
 vi.mock('../src/main/log.js', () => ({ clearLog: () => undefined }));
 vi.mock('../src/main/privacy.js', () => ({ clearSiteBrowsingData: async () => undefined }));
 const game = vi.hoisted(() => ({ running: false }));
@@ -36,6 +48,9 @@ let skipped: { key: string; left: readonly string[]; installed: readonly string[
 let creators: CreatorResult[];
 /** What each creator's download holds: file name → contents. */
 let downloads: Record<string, Record<string, string>>;
+/** Where a creator's plan downloads from, when not their wicked.cc page. */
+let planSource: Record<string, SourceId>;
+let signedIn: boolean;
 
 beforeEach(async () => {
   tmp = await mkdtemp(join(tmpdir(), 'whimwatch-review-'));
@@ -47,6 +62,9 @@ beforeEach(async () => {
   skipped = [];
   creators = [];
   downloads = {};
+  planSource = {};
+  signedIn = false;
+  sites.files = {};
   game.running = false;
   afterInstall = () => undefined;
   trustFails = false;
@@ -86,7 +104,7 @@ async function creator(name: string, have: Record<string, string>, download: Rec
   });
 }
 
-function makeUpdater(): InstanceType<typeof Updater> {
+function makeUpdater(real?: 'real plans'): InstanceType<typeof Updater> {
   const controller = {
     currentState: {
       get lastResult() {
@@ -99,7 +117,7 @@ function makeUpdater(): InstanceType<typeof Updater> {
     backupRoot: join(tmp, 'backups'),
     pool: {},
     installedFiles: () => creators.flatMap((c) => c.files),
-    isSignedIn: () => false,
+    isSignedIn: () => signedIn,
     addsNewFiles: (key: string) => linkPrefs[key]?.addNewFiles === true,
     setAddNewFiles: async (key: string, on: boolean) => {
       if (trustFails) throw new Error('Unknown creator');
@@ -120,9 +138,12 @@ function makeUpdater(): InstanceType<typeof Updater> {
   } as unknown as AppController;
   const updater = new Updater(controller, join(tmp, 'work'));
   const plans = (updater as unknown as { plans: Map<string, { plan: UpdatePlan; workDir: string }> }).plans;
+  if (real) return updater;
   // Stands in for downloading and unpacking: the creator's files, planned by the real installer.
-  vi.spyOn(updater, 'plan').mockImplementation(async (key) => {
+  vi.spyOn(updater, 'plan').mockImplementation(async (key, _url, opts) => {
     const c = creators.find((x) => x.key === key)!;
+    const source = planSource[c.key] ?? 'wickedcc';
+    opts?.onSource?.(source);
     const workDir = join(tmp, 'work', `${c.key}-${plans.size}`);
     const extractedDir = join(workDir, 'files');
     await mkdir(extractedDir, { recursive: true });
@@ -132,7 +153,7 @@ function makeUpdater(): InstanceType<typeof Updater> {
       creatorKey: c.key,
       name: c.name,
       downloadUrl: c.remotes[0]!.listing.url,
-      source: 'wickedcc',
+      source,
       downloads: [`${c.key}.zip`],
       extractedDir,
       extractedFiles: Object.keys(downloads[c.key]!),
@@ -333,6 +354,33 @@ describe('Update all and files the user does not have', () => {
     expect(await read('Moonberry_Animations.package')).toBe('old');
     expect(existsSync(join(mods, 'Moonberry_LoadingScreen.package'))).toBe(false);
     expect(item('moonberry')).toMatchObject({ state: 'failed', message: t().updater.batchNewFiles(1) });
+  });
+
+  it('names the source the update really comes from once it is chosen, not the first guess', async () => {
+    // Guessed from the pages' dates; the plan settles a same-day tie by asking each site for its files.
+    planSource.amberlily = 'loverslab';
+    await makeUpdater().updateAll(['amberlily']);
+
+    expect(batches[0]!.items[0]).toMatchObject({ state: 'queued', source: 'wicked.cc' });
+    // Said while it's still working (downloading), not only once it's done.
+    expect(batches.some((b) => b.items[0]!.state === 'working' && b.items[0]!.source === 'LoversLab')).toBe(true);
+    expect(item('amberlily')).toMatchObject({ state: 'done', source: 'LoversLab' });
+  });
+
+  it('names the source the real plan settles a same-day tie on, before it downloads', async () => {
+    signedIn = true;
+    const wicked = creators[0]!.remotes[0]!;
+    // Midday UTC yesterday, so an hour earlier is still the same day whatever the time now.
+    wicked.updatedAt = Math.floor((NOW - DAY) / DAY) * DAY + 12 * 3_600_000;
+    // The same day, an hour older: the first guess is wicked.cc, but LoversLab offers more files.
+    const loversLab = { ...wicked, listing: { source: 'loverslab' as const, url: 'https://loverslab.test/amberlily', origin: 'directory' as const }, updatedAt: wicked.updatedAt! - 3_600_000 };
+    creators[0]!.remotes.push(loversLab);
+    sites.files[loversLab.listing.url] = 2;
+    await makeUpdater('real plans').updateAll(['amberlily']);
+
+    expect(batches[0]!.items[0]!.source).toBe('wicked.cc');
+    expect(batches.some((b) => b.items[0]!.state === 'working' && b.items[0]!.source === 'LoversLab')).toBe(true);
+    expect(item('amberlily')).toMatchObject({ state: 'failed', message: 'No downloads here', source: 'LoversLab' });
   });
 
   it('forgets the waiting updates when a new run starts', async () => {

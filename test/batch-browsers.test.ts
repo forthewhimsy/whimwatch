@@ -49,6 +49,29 @@ describe('runBatch', () => {
     );
     expect(blocked.items.map((i) => i.state)).toEqual(['failed', 'cancelled', 'cancelled']);
   });
+
+  it('lets a step correct the source it downloads from, while it runs', async () => {
+    const states: BatchState[] = [];
+    const final = await runBatch(
+      [{ key: 'a', name: 'A', source: 'wicked.cc' }],
+      async (_key, setSource) => {
+        setSource('LoversLab');
+        setSource('LoversLab');
+        return 'updated a';
+      },
+      (s) => states.push(s),
+      () => false,
+    );
+    expect(final.items[0]).toMatchObject({ state: 'done', source: 'LoversLab' });
+    // Queued, working, corrected once (the same source again isn't news), done, finished.
+    expect(states.map((s) => `${s.items[0]!.state} ${s.items[0]!.source}`)).toEqual([
+      'queued wicked.cc',
+      'working wicked.cc',
+      'working LoversLab',
+      'done LoversLab',
+      'done LoversLab',
+    ]);
+  });
 });
 
 describe('browser detection helpers', () => {

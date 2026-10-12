@@ -15,7 +15,7 @@ import type { AppSnapshot, BatchItem, BatchState, StorageInfo, UpdateChoice, Upd
 import { numberFormat } from '../shared/i18n/format.js';
 import { englishMessage, t, translatedError } from '../shared/i18n/index.js';
 import { SOURCE_LABEL } from '../shared/labels.js';
-import type { CheckResult, LocalFile, RemoteInfo } from '../shared/types.js';
+import type { CheckResult, LocalFile, RemoteInfo, SourceId } from '../shared/types.js';
 import { laterSources, laterSourcesText, updatableRemotes, updateSources } from '../shared/updatable.js';
 import { sessionsToClear, siteSession } from './browser.js';
 import type { AppController } from './controller.js';
@@ -45,6 +45,8 @@ interface PlanOptions {
   ignoreDates?: boolean;
   /** Download only the file of this name from the page's list (a new file on a page of theirs). */
   onlyFile?: string;
+  /** Told the source as soon as it's chosen, before anything downloads (Update all's "from …"). */
+  onSource?: (source: SourceId) => void;
 }
 
 export class Updater {
@@ -121,7 +123,8 @@ export class Updater {
     const requested = Array.isArray(keys) ? keys.filter((k): k is string => typeof k === 'string') : [];
     const items = requested.flatMap((key) => {
       const target = this.target(key);
-      // Same source the plan will choose: "Update all" never reaches for a pack they don't have.
+      // Where the plan will most likely download from, among the packs they have. A same-day tie is
+      // only settled by asking the sites how many files each offers, so the plan corrects this (setSource).
       const likely = target?.fixedRemote ?? (target && updatableRemotes(target.updateFrom ?? [], this.signedIn(opts))[0]);
       return target && likely ? [{ key, name: target.name, source: SOURCE_LABEL[likely.listing.source] }] : [];
     });
@@ -136,9 +139,12 @@ export class Updater {
       this.setAside.clear();
       return (this.batch = await runBatch(
         items,
-        async (key) => {
+        async (key, setSource) => {
           try {
-            const plan = await this.plan(key, undefined, opts);
+            const onSource = (source: SourceId): void => setSource(SOURCE_LABEL[source]);
+            const plan = await this.plan(key, undefined, { ...opts, onSource });
+            // Again here, in case this reused an update already being prepared, made without onSource.
+            onSource(plan.source);
             const m = t().updater;
             if (plan.gameRunning) throw translatedError((m) => m.updater.closeGameFirst, StopBatchError);
             if (plan.byDate) {
@@ -351,6 +357,7 @@ export class Updater {
       }
       await this.discardPlans(key);
       const label = SOURCE_LABEL[remote.listing.source];
+      opts.onSource?.(remote.listing.source);
       progress('resolving', t().updater.finding(label));
       if (opts.onlyFile && remote.listing.source !== 'loverslab') throw translatedError((m) => m.updater.onlyLoversLabFiles);
       // Installed files are looked for among everything scanned, not one creator's: a file got from
